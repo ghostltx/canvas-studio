@@ -9,7 +9,7 @@ function endpoint(base:string,kind:'generations'|'edits'|'chat/completions'){
   return url.toString();
 }
 function imageBlob(data:string){
-  const match=/^data:(image\/(?:png|jpeg|webp));base64,(.*)$/s.exec(data||'');
+  const match=/^data:(image\/(?:png|jpeg|webp));base64,([\s\S]*)$/.exec(data||'');
   if(!match)throw new Error('参考图须为 PNG、JPEG 或 WebP');
   const binary=atob(match[2]),bytes=new Uint8Array(binary.length);
   for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);

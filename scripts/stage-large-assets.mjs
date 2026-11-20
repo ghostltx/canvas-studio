@@ -2,7 +2,7 @@ import {readdir,readFile,writeFile,unlink,mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-const root=fileURLToPath(new URL('../dist/client/',import.meta.url));
+const root=fileURLToPath(new URL('../dist/',import.meta.url));
 const staged=fileURLToPath(new URL('../.sites-runtime/runtime-assets/',import.meta.url));
 await mkdir(staged,{recursive:true});
 async function visit(dir){
