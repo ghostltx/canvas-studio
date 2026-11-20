@@ -76,7 +76,7 @@
 .canvas-wrap {background:var(--ui-canvas)}
 .canvas-node,.task-card {background:var(--ui-surface);border-color:var(--ui-border);box-shadow:0 12px 36px var(--ui-shadow)}
 .canvas-node.selected {border-color:var(--ui-accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--ui-accent) 19%,transparent),0 14px 36px var(--ui-shadow)}
-.node-header,.node-footer,.process-body,.reverse-actions,.task-sidebar-head,.task-sidebar-foot,.modal-head,.api-section-title.text-api-title {border-color:var(--ui-border)}
+.node-header,.node-footer,.process-body,.reverse-actions,.prompt-actions,.task-sidebar-head,.task-sidebar-foot,.modal-head,.api-section-title.text-api-title {border-color:var(--ui-border)}
 .text-node textarea,.generate-prompt,.generate-body select,.custom-size input,.modal-body input,.canvas-name-input {background:var(--ui-input);color:var(--ui-secondary);border-color:var(--ui-border)}
 .text-node textarea::placeholder,.generate-prompt::placeholder {color:var(--ui-muted)}
 .field-label,.modal-body label,.task-prompt,.process-body p {color:var(--ui-secondary)}
@@ -117,6 +117,8 @@
 .app[data-theme='graphite'] .node-icon.depth,.app[data-theme='graphite'] .connection-menu-icon.depth {background:#363f58;color:#b8c8f3}
 .app[data-theme='graphite'] .reverse-button {background:#513f30;color:#ffd092}
 .app[data-theme='graphite'] .reverse-button:hover {background:#624c38}
+.optimize-button {background:var(--ui-accent-tint);color:var(--ui-accent)}
+.optimize-button:hover {background:color-mix(in srgb,var(--ui-accent) 20%,var(--ui-surface))}
 
 .top-actions {gap:5px;min-width:0}
 .top-button {border-radius:8px;padding:8px 10px;white-space:nowrap}
