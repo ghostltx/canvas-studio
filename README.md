@@ -20,6 +20,8 @@ npm run dev -- --port 5174
 
 本地预览的 D1 迁移参见 Sites 模板的迁移说明。`.openai/hosting.json` 保存 Sites 项目 ID 和 D1/R2 绑定。线上部署需将代码推送到 Sites 源仓库后保存并发布版本；推送 GitHub 本身不会自动更新网站。
 
+深度模型和 ONNX WebAssembly 各超过托管平台的单文件大小上限。构建时 `scripts/stage-large-assets.mjs` 将它们放到忽略的 `.sites-runtime/runtime-assets/`，从部署包移出。首次发布后，使用受 `CANVAS_RUNTIME_UPLOAD_TOKEN` 保护的 `/api/runtime-assets/model` 和 `/api/runtime-assets/wasm` 上传这两个文件到 R2；之后版本会继续使用同一份 R2 文件。
+
 ## 数据与运行限制
 
 - 页面和 API 均要求登录；每个项目、图片和任务按登录用户 ID 隔离。
