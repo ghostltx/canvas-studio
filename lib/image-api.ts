@@ -21,6 +21,7 @@ function apiError(result:any){
 }
 function validSize(size:string){
   if(size==='auto')return true;
+  if(size==='1920x1080')return true;
   const match=/^(\d+)x(\d+)$/.exec(size);
   if(!match)return false;
   const w=+match[1],h=+match[2];
