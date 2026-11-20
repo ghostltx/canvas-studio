@@ -4,7 +4,7 @@ import {generateImage,validateImage} from '../../../lib/image-api';
 export async function GET(request:Request){
   try{
     const user=userId(request),{db}=bindings();
-    const cutoff=new Date(Date.now()-15*60_000).toISOString();
+    const cutoff=new Date(Date.now()-25*60_000).toISOString();
     await db.prepare("UPDATE canvas_tasks SET status='error',error='任务超时或连接中断，图像 API 未提供可恢复的任务 ID。',finished_at=? WHERE user_id=? AND status='running' AND created_at<?").bind(new Date().toISOString(),user,cutoff).run();
     const result=await db.prepare('SELECT id,canvas_id AS canvasId,node_id AS nodeId,node_title AS nodeTitle,canvas_title AS canvasTitle,prompt_preview AS promptPreview,model,size,status,error,mime_type AS mimeType,created_at AS createdAt,finished_at AS finishedAt FROM canvas_tasks WHERE user_id=? ORDER BY created_at DESC LIMIT 200').bind(user).all();
     return json({tasks:result.results.map((task:any)=>({...task,imageUrl:task.status==='completed'?`/api/tasks/${task.id}/image`:null}))});
@@ -24,6 +24,7 @@ export async function POST(request:Request){
     const stream=new ReadableStream<Uint8Array>({
       start(controller){
         controller.enqueue(encoder.encode(JSON.stringify({task})+'\n'));
+        const heartbeat=setInterval(()=>{try{controller.enqueue(encoder.encode(JSON.stringify({status:'running'})+'\n'))}catch{}},15000);
         void (async()=>{
           try{
             const image=await generateImage(input);
@@ -34,7 +35,7 @@ export async function POST(request:Request){
             const message=error instanceof Error?error.message:'生成失败';
             await db.prepare("UPDATE canvas_tasks SET status='error',error=?,finished_at=? WHERE id=? AND user_id=?").bind(message,new Date().toISOString(),task.id,user).run().catch(()=>{});
             controller.enqueue(encoder.encode(JSON.stringify({status:'error',error:message})+'\n'));
-          }finally{controller.close()}
+          }finally{clearInterval(heartbeat);controller.close()}
         })();
       }
     });

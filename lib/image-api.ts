@@ -43,13 +43,13 @@ export async function generateImage(value:ImageRequest){
     const form=new FormData();form.append('model',model);form.append('prompt',prompt);form.append('size',size);
     images.forEach((src,i)=>form.append('image[]',imageBlob(src),`reference-${i+1}.png`));body=form;
   }else{headers['Content-Type']='application/json';body=JSON.stringify({model,prompt,size,n:1})}
-  const response=await fetch(endpoint(baseUrl,images.length?'edits':'generations'),{method:'POST',headers,body,signal:AbortSignal.timeout(300000)});
+  const response=await fetch(endpoint(baseUrl,images.length?'edits':'generations'),{method:'POST',headers,body,signal:AbortSignal.timeout(1200000)});
   let result:any;try{result=await response.json()}catch{throw new Error(`图像 API 返回了非 JSON 响应（HTTP ${response.status}）`)}
   if(!response.ok||result?.error)throw new Error(apiError(result)||`图像 API 请求失败（HTTP ${response.status}）`);
   const item=result?.data?.[0]||result?.images?.[0];
   let image=item?.b64_json?`data:image/png;base64,${item.b64_json}`:item?.url||item?.image_url;
   if(image?.startsWith('http')){
-    const downloaded=await fetch(image,{signal:AbortSignal.timeout(60000)});
+    const downloaded=await fetch(image,{signal:AbortSignal.timeout(180000)});
     if(!downloaded.ok)throw new Error('生成成功，但图片下载失败');
     return {bytes:await downloaded.arrayBuffer(),mimeType:downloaded.headers.get('content-type')||'image/png'};
   }
