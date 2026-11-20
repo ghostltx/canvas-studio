@@ -1,4 +1,4 @@
-type ImageRequest={baseUrl:string,key:string,model:string,prompt:string,images?:string[],size?:string};
+type ImageRequest={baseUrl:string,key:string,model:string,prompt:string,images?:string[],mask?:string,size?:string};
 type TextRequest={baseUrl:string,key:string,model:string,images:string[]};
 type OptimizeRequest={baseUrl:string,key:string,model:string,prompt:string};
 
@@ -29,20 +29,20 @@ function validSize(size:string){
   return w%16===0&&h%16===0&&w<=3840&&h<=3840&&w/h>=1/3&&w/h<=3&&w*h>=655360&&w*h<=8294400;
 }
 export function validateImage(value:ImageRequest){
-  const {baseUrl,key,model,prompt,images=[],size='1024x1024'}=value;
+  const {baseUrl,key,model,prompt,images=[],mask,size='1024x1024'}=value;
   if(!baseUrl||!key||!model||!prompt?.trim())throw new Error('请填写 API 地址、密钥、模型和提示词');
   if(!Array.isArray(images)||images.length>8)throw new Error('参考图最多 8 张');
   if(!validSize(size))throw new Error('图像尺寸不符合限制');
-  images.forEach(imageBlob);endpoint(baseUrl,images.length?'edits':'generations');
+  images.forEach(imageBlob);if(mask){if(!images.length||!mask.startsWith('data:image/png;base64,'))throw new Error('蒙版必须是与原图同尺寸的 PNG');imageBlob(mask)}endpoint(baseUrl,images.length?'edits':'generations');
 }
 export async function generateImage(value:ImageRequest){
   validateImage(value);
-  const {baseUrl,key,model,prompt,images=[],size='1024x1024'}=value;
+  const {baseUrl,key,model,prompt,images=[],mask,size='1024x1024'}=value;
   const headers:Record<string,string>={Authorization:`Bearer ${key}`};
   let body:BodyInit;
   if(images.length){
     const form=new FormData();form.append('model',model);form.append('prompt',prompt);form.append('size',size);
-    images.forEach((src,i)=>form.append('image[]',imageBlob(src),`reference-${i+1}.png`));body=form;
+    images.forEach((src,i)=>form.append('image[]',imageBlob(src),`reference-${i+1}.png`));if(mask)form.append('mask',imageBlob(mask),'mask.png');body=form;
   }else{headers['Content-Type']='application/json';body=JSON.stringify({model,prompt,size,n:1})}
   const response=await fetch(endpoint(baseUrl,images.length?'edits':'generations'),{method:'POST',headers,body,signal:AbortSignal.timeout(1200000)});
   let result:any;try{result=await response.json()}catch{throw new Error(`图像 API 返回了非 JSON 响应（HTTP ${response.status}）`)}

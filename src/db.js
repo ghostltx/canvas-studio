@@ -22,7 +22,7 @@ async function uploadImage(src){
 }
 async function portableDocument(value){
   const nodes=[];
-  for(const node of value.nodes||[])nodes.push({...node,data:{...node.data,src:await uploadImage(node.data?.src)}});
+  for(const node of value.nodes||[])nodes.push({...node,data:{...node.data,src:await uploadImage(node.data?.src),previousSrc:await uploadImage(node.data?.previousSrc)}});
   return {...value,nodes};
 }
 function thumbnail(source){
