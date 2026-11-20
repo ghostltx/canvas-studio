@@ -50,11 +50,3 @@ export async function saveDocument(projectId,value,{touch=true}={}){
 }
 export async function createProject(){return (await api('/api/projects',{method:'POST'})).id}
 export async function listProjects(){return (await api('/api/projects')).projects}
-export async function prepareBackup(backup){
-  if(backup?.format!=='canvas-studio-workspace'||backup.version!==1||!Array.isArray(backup.documents))throw new Error('请选择 Canvas Studio 导出的工作区备份');
-  const documents=[];
-  for(const item of backup.documents)documents.push({...item,document:await portableDocument(item.document)});
-  const tasks=[];
-  for(const task of backup.tasks||[])tasks.push({...task,image:await uploadImage(task.image)});
-  return {...backup,documents,tasks};
-}

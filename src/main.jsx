@@ -9,7 +9,7 @@ import './image-tools.css';
 import {loadSettings,saveSettings,firstImageProfile,selectedImageProfile,profileMetadata,mergeRemoteProfiles} from './image-profiles';
 import ImageProfileEditor from './ImageProfileEditor';
 import {ImageToolToolbar,ImageToolDialog} from './ImageTools';
-import {loadDocument,saveDocument,listProjects,createProject,prepareBackup} from './db';
+import {loadDocument,saveDocument,listProjects,createProject} from './db';
 
 const CanvasContext=createContext(null);
 const useCanvas=()=>useContext(CanvasContext);
@@ -112,14 +112,13 @@ function projectTime(value){
   return new Date(value).toLocaleDateString('zh-CN',{year:'numeric',month:'short',day:'numeric'})+' 修改';
 }
 
-function ProjectPage({projects,loading,error,creating,onCreate,onOpen,onRetry,onImport,theme,setTheme}){
+function ProjectPage({projects,loading,error,creating,onCreate,onOpen,onRetry,theme,setTheme}){
   const [query,setQuery]=useState('');
-  const importInput=useRef(null);
   const visible=projects.filter(project=>project.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   return <div className="app projects-page" data-theme={theme}>
     <header className="topbar projects-topbar"><div className="brand"><div className="brand-mark"><Sparkles size={19}/></div><div><b>Canvas Studio</b><span>你的创意空间</span></div></div><ThemePicker theme={theme} onSelect={setTheme}/></header>
     <main className="projects-main"><div className="projects-content">
-      <div className="projects-heading"><div><span className="projects-eyebrow">PRIVATE CLOUD WORKSPACE</span><h1>我的项目</h1><p>从这里打开画布，接着上次的内容继续创作。</p></div><div className="project-heading-actions"><button className="workspace-transfer" type="button" onClick={()=>importInput.current?.click()}><FolderOpen size={16}/> 导入本地备份</button><input ref={importInput} type="file" accept=".json,application/json" hidden onChange={event=>{const file=event.target.files?.[0];if(file)onImport(file);event.target.value=''}}/><label className="project-search"><Search size={17}/><input aria-label="搜索项目" placeholder="搜索项目名称" value={query} onChange={event=>setQuery(event.target.value)}/></label></div></div>
+      <div className="projects-heading"><div><span className="projects-eyebrow">PRIVATE CLOUD WORKSPACE</span><h1>我的项目</h1><p>从这里打开画布，接着上次的内容继续创作。</p></div><div className="project-heading-actions"><label className="project-search"><Search size={17}/><input aria-label="搜索项目" placeholder="搜索项目名称" value={query} onChange={event=>setQuery(event.target.value)}/></label></div></div>
       <div className="projects-section-title"><strong>全部画布</strong><span>{projects.length} 个项目 · 最近修改优先</span></div>
       {error&&<div className="projects-error" role="alert">{error}<button onClick={onRetry}>重试</button></div>}
       <div className="project-grid">
@@ -327,8 +326,7 @@ function ProjectApp(){
   const openProject=useCallback(id=>{const url=new URL(location.href);url.searchParams.set('project',id);history.pushState(null,'',url);setProjectId(id)},[]);
   const backToProjects=useCallback(()=>{const url=new URL(location.href);url.searchParams.delete('project');history.replaceState(null,'',url);setProjectId(null)},[]);
   const newProject=useCallback(async()=>{if(creating)return;setCreating(true);try{openProject(await createProject())}catch(e){setError(e.message||'新建画布失败')}finally{setCreating(false)}},[creating,openProject]);
-  const importBackup=useCallback(async file=>{setLoading(true);try{const backup=await prepareBackup(JSON.parse(await file.text()));const response=await fetch('/api/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(backup)});const result=await response.json();if(!response.ok)throw new Error(result.error||'导入失败');await refresh();setError('')}catch(error){setError(error.message||'导入失败')}finally{setLoading(false)}},[refresh]);
-  return projectId?<ReactFlowProvider key={projectId}><CanvasEditor projectId={projectId} onBack={backToProjects} theme={theme} setTheme={setTheme}/></ReactFlowProvider>:<ProjectPage projects={projects} loading={loading} error={error} creating={creating} onCreate={newProject} onOpen={openProject} onRetry={refresh} onImport={importBackup} theme={theme} setTheme={setTheme}/>;
+  return projectId?<ReactFlowProvider key={projectId}><CanvasEditor projectId={projectId} onBack={backToProjects} theme={theme} setTheme={setTheme}/></ReactFlowProvider>:<ProjectPage projects={projects} loading={loading} error={error} creating={creating} onCreate={newProject} onOpen={openProject} onRetry={refresh} theme={theme} setTheme={setTheme}/>;
 }
 
 export default ProjectApp;
