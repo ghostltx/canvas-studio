@@ -67,15 +67,34 @@ export async function setStorageMode(next){
 
 export async function listProjects(){
   const {active,lists,entries}=await combined();
+  const locations=new Map();
+  const recordLocation=(projects,store)=>{
+    for(const project of projects){
+      if(!locations.has(project.id))locations.set(project.id,new Set());
+      locations.get(project.id).add(storeName(store));
+    }
+  };
+  for(const {store,projects} of lists)recordLocation(projects,store);
   if(active.length===2){
     for(const [id,{store,meta}] of entries){
       const stale=lists.find(item=>item.store!==store)?.projects.find(item=>item.id===id);
       if(stale&&iso(stale.updatedAt)>=iso(meta.updatedAt))continue;
       const document=await store.loadDocument(id);
-      if(document)await upsert(active.find(item=>item!==store),meta,document);
+      if(document){
+        const destination=active.find(item=>item!==store);
+        await upsert(destination,meta,document);
+        recordLocation([meta],destination);
+      }
     }
   }
-  return [...entries.values()].map(item=>item.meta).sort((a,b)=>iso(b.updatedAt)-iso(a.updatedAt));
+  if(entries.size){
+    const inactive=[nas,cloud].filter(store=>!active.includes(store));
+    await Promise.allSettled(inactive.map(async store=>{
+      const projects=await store.listProjects({signal:AbortSignal.timeout(2500)});
+      recordLocation(projects,store);
+    }));
+  }
+  return [...entries.values()].map(({meta})=>({...meta,storageLocations:[...locations.get(meta.id)]})).sort((a,b)=>iso(b.updatedAt)-iso(a.updatedAt));
 }
 
 export async function loadDocument(id){

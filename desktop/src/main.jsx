@@ -12,7 +12,7 @@ import {loadSettings,saveSettings,firstImageProfile,selectedImageProfile,profile
 import ImageProfileEditor from './ImageProfileEditor';
 import ApiConfigTransfer from './ApiConfigTransfer';
 import StorageSwitches from './StorageSwitches';
-import ProjectStorageStatus from './ProjectStorageStatus';
+import ProjectStorageStatus,{ProjectStorageDots} from './ProjectStorageStatus';
 import {ImageToolToolbar,ImageToolDialog} from './ImageTools';
 import {loadDocument,saveDocument,listProjects,createProject,deleteProject,exportWorkspace,getStorageMode,setStorageMode} from './db';
 
@@ -143,7 +143,7 @@ function ProjectPage({projects,loading,error,creating,onCreate,onOpen,onDelete,o
       {error&&<div className="projects-error" role="alert">{error}<button onClick={onRetry}>重试</button></div>}
       <div className="project-grid">
         <button className="project-card new-project-card" type="button" disabled={creating} onClick={onCreate} aria-label="新建空白画布"><span className="project-thumbnail new-project-thumbnail">{creating?<LoaderCircle size={39} className="spin"/>:<Plus size={43} strokeWidth={1.6}/>}</span><span className="project-card-info"><strong>新建空白画布</strong><small>从零开始创作</small></span></button>
-        {visible.map(project=><div className="project-card" key={project.id}><button className="project-card-open" type="button" onClick={()=>onOpen(project.id)} aria-label={`打开项目：${project.title}`}><span className="project-thumbnail">{project.preview?<img src={project.preview} alt=""/>:<span className="project-placeholder"><FolderOpen size={35} strokeWidth={1.5}/></span>}<span className="project-node-count">{project.nodeCount} 个节点</span></span><span className="project-card-info"><strong title={project.title}>{project.title}</strong><small>{projectTime(project.updatedAt)}</small></span></button><button className="project-card-delete" type="button" aria-label={`删除项目：${project.title}`} title="删除项目" onClick={()=>{setDeleteError('');setDeleting(project)}}><Trash2 size={17}/></button></div>)}
+        {visible.map(project=><div className="project-card" key={project.id}><button className="project-card-open" type="button" onClick={()=>onOpen(project.id)} aria-label={`打开项目：${project.title}`}><span className="project-thumbnail"><ProjectStorageDots locations={project.storageLocations}/>{project.preview?<img src={project.preview} alt=""/>:<span className="project-placeholder"><FolderOpen size={35} strokeWidth={1.5}/></span>}<span className="project-node-count">{project.nodeCount} 个节点</span></span><span className="project-card-info"><strong title={project.title}>{project.title}</strong><small>{projectTime(project.updatedAt)}</small></span></button><button className="project-card-delete" type="button" aria-label={`删除项目：${project.title}`} title="删除项目" onClick={()=>{setDeleteError('');setDeleting(project)}}><Trash2 size={17}/></button></div>)}
       </div>
       {!loading&&query&&visible.length===0&&<p className="projects-no-results">没有找到匹配的项目</p>}
       {loading&&<div className="projects-loading"><LoaderCircle size={20} className="spin"/> 正在读取本地项目…</div>}

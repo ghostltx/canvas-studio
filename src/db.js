@@ -49,6 +49,6 @@ export async function saveDocument(projectId,value,{touch=true}={}){
   return api(`/api/projects/${encodeURIComponent(projectId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...document,preview,touch})});
 }
 export async function createProject(){return (await api('/api/projects',{method:'POST'})).id}
-export async function listProjects(){return (await api('/api/projects')).projects}
+export async function listProjects(){return (await api('/api/projects')).projects.map(project=>({...project,storageLocations:['cloud']}))}
 
 export async function deleteProject(id){return api(`/api/projects/${encodeURIComponent(id)}`,{method:'DELETE'})}

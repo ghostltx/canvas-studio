@@ -56,7 +56,7 @@ export function remoteStore(kind){
   return {
     kind,
     verify:async()=>jsonRequest(cloud?`${prefix}/status`:'/api/storage'),
-    listProjects:async()=> (await jsonRequest(`${prefix}/projects`)).projects,
+    listProjects:async({signal}={})=> (await jsonRequest(`${prefix}/projects`,{signal})).projects,
     loadDocument:async id=>{const response=await fetch(`${prefix}/projects/${encodeURIComponent(id)}`);if(response.status===404)return null;const result=await response.json();if(!response.ok)throw new Error(result.error||'读取画布失败');return cloud?{...result,nodes:result.nodes.map(node=>({...node,data:{...node.data,src:localImage(node.data?.src),previousSrc:localImage(node.data?.previousSrc)}}))}:result},
     upsertProject,
     verifyDelete:async()=>jsonRequest(`${prefix}/projects/00000000-0000-0000-0000-000000000000`,{method:'DELETE'}),

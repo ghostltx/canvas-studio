@@ -2,6 +2,16 @@ import React from 'react';
 import {Cloud,HardDrive} from 'lucide-react';
 import './project-storage-status.css';
 
+export function ProjectStorageDots({locations=[]}){
+  const labels={nas:'NAS',cloud:'Cloudflare',browser:'浏览器本地'};
+  const storedAt=['nas','cloud','browser'].filter(key=>locations.includes(key));
+  if(!storedAt.length)return null;
+  const description=`已保存到：${storedAt.map(key=>labels[key]).join('、')}`;
+  return <span className="project-storage-dots" role="img" aria-label={description} title={description}>
+    {storedAt.map(key=><span key={key} className={`project-storage-dot ${key}`} aria-hidden="true"/>)}
+  </span>;
+}
+
 export default function ProjectStorageStatus({mode,hosted=false,busy=false}){
   const locations=[
     {key:'nas',name:'NAS',Icon:HardDrive,detail:hosted?'在线版未连接 NAS；可在本地版启用 NAS 存储':mode.nas?'画布保存到 NAS': 'NAS 存储未启用'},
