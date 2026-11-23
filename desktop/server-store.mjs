@@ -55,6 +55,7 @@ export async function openProjectStore(root){
       else db.prepare('INSERT INTO projects(id,title,created_at,updated_at,node_count,preview,document) VALUES(?,?,?,?,?,?,?)').run(id,title,createdAt||when,when,document.nodes.length,preview||null,body);
       return true;
     },
+    delete:id=>db.prepare('DELETE FROM projects WHERE id=?').run(id).changes>0,
     integrity:()=>db.prepare('PRAGMA integrity_check').get()?.integrity_check==='ok'
   };
   project.listTasks=()=>db.prepare('SELECT data FROM canvas_tasks ORDER BY created_at DESC LIMIT 500').all().map(row=>JSON.parse(row.data));

@@ -219,6 +219,7 @@ http.createServer(async (req,res) => {
     try{const input=await readBody(req),{id,document}=input;if(!/^(?:[0-9a-f-]{36}|main)$/i.test(id||'')||!document||!Array.isArray(document.edges)||!Array.isArray(document.nodes)||typeof document.title!=='string')throw new Error('迁移画布格式无效');return send(res,200,{written:(await getProjectStore()).migrate(input)})}catch(error){return send(res,400,{error:error.message||'迁移失败'})}
   }
   const projectMatch=/^\/api\/projects\/([0-9a-f-]{36}|main)$/i.exec(req.url||'');
+  if(projectMatch&&req.method==='DELETE'){try{(await getProjectStore()).delete(projectMatch[1]);return send(res,200,{ok:true})}catch(error){return send(res,503,{error:error.message||'删除画布失败'})}}
   if(projectMatch&&req.method==='GET'){try{const document=(await getProjectStore()).get(projectMatch[1]);return document?send(res,200,document):send(res,404,{error:'画布不存在'})}catch(error){return send(res,503,{error:error.message||'NAS 不可用'})}}
   if(projectMatch&&req.method==='PUT'){
     try{const input=await readBody(req);if(!Array.isArray(input.nodes)||!Array.isArray(input.edges)||typeof input.title!=='string')throw new Error('画布数据格式无效');const {preview,touch,...document}=input;return (await getProjectStore()).save(projectMatch[1],document,{preview,touch})?send(res,200,{ok:true}):send(res,404,{error:'画布不存在'})}catch(error){return send(res,400,{error:error.message||'保存画布失败'})}

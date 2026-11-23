@@ -180,3 +180,18 @@
 .projects-error button {border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;padding:4px 9px}
 @media(max-width:860px){.editor-brand{min-width:0}.editor-brand .brand span{display:none}}
 @media(max-width:650px){.projects-content{padding:28px 18px 60px}.projects-heading{display:block;margin-bottom:25px}.project-heading-actions{margin-top:20px;flex-wrap:wrap}.project-search{width:100%}.project-grid{grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:21px 12px}.projects-heading h1{font-size:25px}.editor-brand .brand{display:none}.back-to-projects span{display:none}}
+
+.project-card:not(button){position:relative}
+.project-card-open{display:flex;flex-direction:column;width:100%;min-width:0;padding:0;border:0;background:transparent;text-align:left;color:var(--ui-text);cursor:pointer}
+.project-card-open:focus-visible{outline:none}
+.project-card-open:hover .project-thumbnail,.project-card-open:focus-visible .project-thumbnail{transform:translateY(-3px);border-color:var(--ui-accent);box-shadow:0 12px 28px var(--ui-shadow)}
+.project-card-delete{position:absolute;top:10px;right:10px;z-index:2;display:grid;place-items:center;width:32px;height:32px;border:1px solid var(--ui-border);border-radius:9px;background:var(--ui-surface);color:var(--ui-secondary);box-shadow:0 2px 8px var(--ui-shadow);cursor:pointer;transition:background .15s,color .15s,transform .15s}
+.project-card-delete:hover,.project-card-delete:focus-visible{background:#d33a47;color:#fff;transform:translateY(-1px)}
+.project-delete-modal{width:min(390px,calc(100vw - 32px));padding:28px;border:1px solid var(--ui-border);border-radius:18px;background:var(--ui-surface);color:var(--ui-text);box-shadow:0 22px 60px var(--ui-shadow)}
+.project-delete-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:color-mix(in srgb,#d33a47 12%,var(--ui-surface));color:#d33a47}
+.project-delete-modal h2{margin:15px 0 8px;font-size:19px}.project-delete-modal p{margin:0;color:var(--ui-secondary);font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.project-delete-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}.project-delete-confirm{padding:9px 16px;border:0;border-radius:9px;background:#d33a47;color:#fff;font-weight:600;cursor:pointer}.project-delete-confirm:disabled{opacity:.6;cursor:wait}
+.projects-topbar .top-actions{gap:13px}
+@media(max-width:650px){.projects-topbar .top-actions{gap:5px}.projects-topbar .top-button{font-size:0;gap:0}.projects-topbar .top-button svg{flex:none}.projects-topbar .storage-switches{gap:4px;margin-right:0}}
+
+.project-delete-error{margin-top:12px!important;color:#c93649!important}

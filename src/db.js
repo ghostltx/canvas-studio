@@ -50,3 +50,5 @@ export async function saveDocument(projectId,value,{touch=true}={}){
 }
 export async function createProject(){return (await api('/api/projects',{method:'POST'})).id}
 export async function listProjects(){return (await api('/api/projects')).projects}
+
+export async function deleteProject(id){return api(`/api/projects/${encodeURIComponent(id)}`,{method:'DELETE'})}

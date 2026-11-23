@@ -70,6 +70,14 @@ export async function createProject() {
   return id;
 }
 
+export async function deleteProject(id){
+  const db=await open();
+  return transact(db,['documents','projects'],'readwrite',tx=>{
+    tx.objectStore('documents').delete(id);
+    tx.objectStore('projects').delete(id);
+  });
+}
+
 export async function upsertProject(meta,document){
   const db=await open();
   return transact(db,['documents','projects'],'readwrite',(tx,done)=>{

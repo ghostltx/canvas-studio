@@ -56,6 +56,7 @@ export function remoteStore(kind){
     listProjects:async()=> (await jsonRequest(`${prefix}/projects`)).projects,
     loadDocument:async id=>{const response=await fetch(`${prefix}/projects/${encodeURIComponent(id)}`);if(response.status===404)return null;const result=await response.json();if(!response.ok)throw new Error(result.error||'读取画布失败');return cloud?{...result,nodes:result.nodes.map(node=>({...node,data:{...node.data,src:localImage(node.data?.src),previousSrc:localImage(node.data?.previousSrc)}}))}:result},
     upsertProject,
+    deleteProject:async id=>jsonRequest(`${prefix}/projects/${encodeURIComponent(id)}`,{method:'DELETE'}),
     createProject:async()=>{const id=crypto.randomUUID(),now=new Date().toISOString(),document={title:'未命名画布',nodes:[],edges:[],viewport:{x:0,y:0,zoom:1}};await upsertProject({id,createdAt:now,updatedAt:now,preview:null},document);return id},
     saveDocument:async(id,document,{touch=true,timestamp=new Date().toISOString()}={})=>{
       const preview=await thumbnail(sourceForPreview(document));

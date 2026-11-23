@@ -96,6 +96,13 @@ export async function createProject(){
   return id;
 }
 
+export async function deleteProject(id){
+  const active=stores(getStorageMode());
+  const results=await Promise.allSettled(active.map(store=>store.deleteProject(id)));
+  const failed=results.find(result=>result.status==='rejected');
+  if(failed)throw failed.reason;
+}
+
 export async function saveDocument(id,document,options){
   const active=stores(getStorageMode());
   lastSaveTime=Math.max(Date.now(),lastSaveTime+1);
