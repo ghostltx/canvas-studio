@@ -1,0 +1,33 @@
+.project-heading-actions{flex-wrap:wrap;justify-content:flex-end;min-width:0;flex-shrink:0;max-width:100%}
+.project-heading-actions .project-search{flex:0 0 290px}
+.project-batch-button,.project-batch-clear,.project-batch-delete{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:0 12px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface);color:var(--ui-secondary);font-size:14px;font-weight:600;white-space:nowrap}
+.project-batch-button{height:40px}
+.project-batch-button:hover,.project-batch-button.active{background:var(--ui-accent-tint);border-color:var(--ui-accent);color:var(--ui-accent)}
+.project-batch-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:22px;padding:12px 0;border-bottom:1px solid var(--ui-border)}
+.project-select-all{display:inline-flex;align-items:center;gap:8px;min-height:38px;font-size:14px;font-weight:600;color:var(--ui-text);white-space:nowrap;cursor:pointer}
+.project-select-all input,.project-card-select input{width:19px;height:19px;margin:0;accent-color:var(--ui-accent);cursor:pointer}
+.project-selection-count{color:var(--ui-secondary);font-size:14px;line-height:1.5}
+.project-batch-toolbar-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-left:auto}
+.project-batch-clear{border-color:transparent;background:transparent}
+.project-batch-clear:hover{background:var(--ui-inset)}
+.project-batch-delete{color:#d33a47;border-color:color-mix(in srgb,#d33a47 35%,var(--ui-border))}
+.project-batch-delete:hover{color:#fff;background:#d33a47;border-color:#d33a47}
+.project-batch-button:disabled,.project-batch-clear:disabled,.project-batch-delete:disabled{opacity:.45;cursor:default}
+.project-batch-delete:disabled:hover{color:#d33a47;border-color:color-mix(in srgb,#d33a47 35%,var(--ui-border));background:var(--ui-surface)}
+.project-card-select{position:absolute;top:10px;right:10px;z-index:2;display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface);box-shadow:0 2px 8px var(--ui-shadow);cursor:pointer}
+.project-card.is-selected .project-thumbnail{border-color:var(--ui-accent);box-shadow:0 0 0 2px var(--ui-accent)}
+.project-card.is-managing:hover .project-thumbnail,.project-card.is-managing .project-card-open:hover .project-thumbnail{transform:none}
+.project-card-open:disabled,.project-card-select:has(input:disabled){cursor:wait}
+.project-batch-button:focus-visible,.project-batch-clear:focus-visible,.project-batch-delete:focus-visible,.project-select-all input:focus-visible,.project-card-select input:focus-visible{outline:2px solid var(--ui-accent);outline-offset:3px}
+.project-batch-dialog{width:min(460px,100%);max-height:calc(100vh - 40px);overflow:auto;outline:none}
+.project-batch-delete-list{display:flex;flex-direction:column;gap:9px;max-height:220px;overflow:auto;margin:16px 0 0;padding:0;list-style:none}
+.project-batch-delete-list li{display:flex;align-items:center;gap:10px;min-height:38px;padding-right:6px;color:var(--ui-text);font-size:14px}
+.project-batch-preview{display:grid;place-items:center;width:42px;height:34px;flex:none;overflow:hidden;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-inset);color:var(--ui-muted)}
+.project-batch-preview img{width:100%;height:100%;object-fit:cover}
+.project-batch-item-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.project-batch-delete-list small{flex:none;font-size:12px;color:var(--ui-muted)}
+.project-batch-error{max-height:120px;overflow:auto;white-space:pre-wrap}
+.project-batch-dialog .project-delete-confirm{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:100px}
+.project-batch-dialog .project-batch-progress{margin-top:14px;color:var(--ui-secondary);font-size:14px}
+@media(max-width:1100px){.projects-heading{flex-wrap:wrap}.project-heading-actions{justify-content:flex-start}}
+@media(max-width:650px){.project-heading-actions .project-search{flex:1 1 100%}.project-batch-toolbar{gap:8px}.project-batch-toolbar-actions{width:100%;margin-left:0}.project-batch-delete{margin-left:auto}.project-batch-dialog{padding:22px}.project-batch-delete-list{max-height:180px}}

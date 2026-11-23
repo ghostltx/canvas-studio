@@ -13,6 +13,8 @@ import ImageProfileEditor from './ImageProfileEditor';
 import ApiConfigTransfer from './ApiConfigTransfer';
 import StorageSwitches from './StorageSwitches';
 import ProjectStorageStatus,{ProjectStorageDots} from './ProjectStorageStatus';
+import {useProjectBatch,ProjectBatchButton,ProjectBatchToolbar,ProjectBatchCheckbox,ProjectBatchDialog} from './ProjectBatchActions';
+import {deleteProjectBatch} from './project-batch';
 import {ImageToolToolbar,ImageToolDialog} from './ImageTools';
 import {loadDocument,saveDocument,listProjects,createProject,deleteProject,exportWorkspace,getStorageMode,setStorageMode} from './db';
 
@@ -123,7 +125,7 @@ function ApiSettingsModal({draftSettings,setDraftSettings,envNames,onClose,onSav
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="settings-modal"><div className="modal-head"><div className="modal-icon"><Settings size={20}/></div><div><h2>API 设置</h2><p>图像生成与提示词处理分别连接服务</p></div><button className="icon-button" onClick={()=>onClose()}><X size={20}/></button></div><div className="modal-body"><ImageProfileEditor settings={draftSettings} envNames={LOCAL_MODE?envNames:null} onChange={setDraftSettings}/><ApiConfigTransfer settings={draftSettings} localMode={LOCAL_MODE} onImport={setDraftSettings}/><div className="settings-note">文本服务需支持 OpenAI 兼容的 /chat/completions；图像反推还需支持图片输入。手动填写的 Key 保存在当前浏览器；环境变量 Key 由本地服务读取。</div></div><div className="modal-footer"><button className="secondary-button" onClick={()=>onClose()}>取消</button><button className="primary-button" onClick={onSave}>保存设置</button></div></div></div>;
 }
 
-function ProjectPage({projects,loading,error,creating,onCreate,onOpen,onDelete,onRetry,onExport,theme,setTheme}){
+function ProjectPage({projects,loading,error,creating,onCreate,onOpen,onDelete,onDeleteMany,onRetry,onExport,theme,setTheme}){
   const [query,setQuery]=useState('');
   const [deleting,setDeleting]=useState(null),[deleteBusy,setDeleteBusy]=useState(false),[deleteError,setDeleteError]=useState('');
   const [settings,setSettings]=useState(loadSettings),[draftSettings,setDraftSettings]=useState(null),[settingsOpen,setSettingsOpen]=useState(false),[envNames,setEnvNames]=useState([]);
@@ -134,21 +136,25 @@ function ProjectPage({projects,loading,error,creating,onCreate,onOpen,onDelete,o
   const [storageMode,setStorageModeState]=useState(getStorageMode),[storageBusy,setStorageBusy]=useState(false),[storageError,setStorageError]=useState('');
   const toggleStorage=async kind=>{if(storageBusy)return;setStorageBusy(true);setStorageError('');try{const next=await setStorageMode({...storageMode,[kind]:!storageMode[kind]});setStorageModeState(next);location.reload()}catch(error){setStorageError(error.message||'切换存储失败');setStorageBusy(false)}};
   const visible=projects.filter(project=>project.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const batch=useProjectBatch(projects,onDeleteMany);
+  const storageLabel=storageMode.nas&&storageMode.cloud?'当前启用的 NAS 和 Cloudflare':storageMode.nas?'NAS':storageMode.cloud?'Cloudflare':'当前浏览器';
   return <div className="app projects-page" data-theme={theme}>
-    <header className="topbar projects-topbar"><div className="projects-identity"><div className="brand"><div className="brand-mark"><Sparkles size={19}/></div><div><b>Canvas Studio</b><span>你的创意空间</span></div></div><ProjectStorageStatus mode={storageMode} busy={storageBusy}/></div><div className="top-actions"><StorageSwitches mode={storageMode} busy={storageBusy} onToggle={toggleStorage}/><button className="top-button" type="button" onClick={openSettings}><Settings size={17}/> API 设置</button><ThemePicker theme={theme} onSelect={setTheme}/></div></header>
+    <header className="topbar projects-topbar"><div className="projects-identity"><div className="brand"><div className="brand-mark"><Sparkles size={19}/></div><div><b>Canvas Studio</b><span>你的创意空间</span></div></div><ProjectStorageStatus mode={storageMode} busy={storageBusy}/></div><div className="top-actions"><StorageSwitches mode={storageMode} busy={storageBusy||batch.busy} onToggle={toggleStorage}/><button className="top-button" type="button" onClick={openSettings}><Settings size={17}/> API 设置</button><ThemePicker theme={theme} onSelect={setTheme}/></div></header>
     <main className="projects-main"><div className="projects-content">
-      <div className="projects-heading"><div><span className="projects-eyebrow">LOCAL WORKSPACE</span><h1>我的项目</h1><p>从这里打开画布，接着上次的内容继续创作。</p></div><div className="project-heading-actions"><button className="workspace-transfer" type="button" onClick={onExport}><Download size={16}/> 导出工作区备份</button><label className="project-search"><Search size={17}/><input aria-label="搜索项目" placeholder="搜索项目名称" value={query} onChange={event=>setQuery(event.target.value)}/></label></div></div>
+      <div className="projects-heading"><div><span className="projects-eyebrow">LOCAL WORKSPACE</span><h1>我的项目</h1><p>从这里打开画布，接着上次的内容继续创作。</p></div><div className="project-heading-actions"><button className="workspace-transfer" type="button" onClick={onExport}><Download size={16}/> 导出工作区备份</button><ProjectBatchButton batch={batch} disabled={loading||creating||storageBusy}/><label className="project-search"><Search size={17}/><input aria-label="搜索项目" placeholder="搜索项目名称" value={query} disabled={batch.busy} onChange={event=>setQuery(event.target.value)}/></label></div></div>
       <div className="projects-section-title"><strong>全部画布</strong><span>{projects.length} 个项目 · 最近修改优先</span></div>
+      <ProjectBatchToolbar batch={batch} visible={visible} filtered={!!query.trim()}/>
       {storageError&&<div className="projects-error" role="alert">{storageError}</div>}
       {error&&<div className="projects-error" role="alert">{error}<button onClick={onRetry}>重试</button></div>}
       <div className="project-grid">
-        <button className="project-card new-project-card" type="button" disabled={creating} onClick={onCreate} aria-label="新建空白画布"><span className="project-thumbnail new-project-thumbnail">{creating?<LoaderCircle size={39} className="spin"/>:<Plus size={43} strokeWidth={1.6}/>}</span><span className="project-card-info"><strong>新建空白画布</strong><small>从零开始创作</small></span></button>
-        {visible.map(project=><div className="project-card" key={project.id}><button className="project-card-open" type="button" onClick={()=>onOpen(project.id)} aria-label={`打开项目：${project.title}`}><span className="project-thumbnail"><ProjectStorageDots locations={project.storageLocations}/>{project.preview?<img src={project.preview} alt=""/>:<span className="project-placeholder"><FolderOpen size={35} strokeWidth={1.5}/></span>}<span className="project-node-count">{project.nodeCount} 个节点</span></span><span className="project-card-info"><strong title={project.title}>{project.title}</strong><small>{projectTime(project.updatedAt)}</small></span></button><button className="project-card-delete" type="button" aria-label={`删除项目：${project.title}`} title="删除项目" onClick={()=>{setDeleteError('');setDeleting(project)}}><Trash2 size={17}/></button></div>)}
+        <button className="project-card new-project-card" type="button" disabled={creating||batch.active} onClick={onCreate} aria-label="新建空白画布"><span className="project-thumbnail new-project-thumbnail">{creating?<LoaderCircle size={39} className="spin"/>:<Plus size={43} strokeWidth={1.6}/>}</span><span className="project-card-info"><strong>新建空白画布</strong><small>从零开始创作</small></span></button>
+        {visible.map(project=><div className={`project-card ${batch.active?'is-managing':''} ${batch.selected.has(project.id)?'is-selected':''}`} key={project.id}><button className="project-card-open" type="button" disabled={batch.busy} onClick={()=>batch.active?batch.toggle(project.id):onOpen(project.id)} aria-label={`${batch.active?'切换选择':'打开项目'}：${project.title}`} aria-pressed={batch.active?batch.selected.has(project.id):undefined}><span className="project-thumbnail"><ProjectStorageDots locations={project.storageLocations}/>{project.preview?<img src={project.preview} alt=""/>:<span className="project-placeholder"><FolderOpen size={35} strokeWidth={1.5}/></span>}<span className="project-node-count">{project.nodeCount} 个节点</span></span><span className="project-card-info"><strong title={project.title}>{project.title}</strong><small>{projectTime(project.updatedAt)}</small></span></button>{batch.active?<ProjectBatchCheckbox batch={batch} project={project}/>:<button className="project-card-delete" type="button" aria-label={`删除项目：${project.title}`} title="删除项目" onClick={()=>{setDeleteError('');setDeleting(project)}}><Trash2 size={17}/></button>}</div>)}
       </div>
       {!loading&&query&&visible.length===0&&<p className="projects-no-results">没有找到匹配的项目</p>}
       {loading&&<div className="projects-loading"><LoaderCircle size={20} className="spin"/> 正在读取本地项目…</div>}
     </div></main>
     {settingsOpen&&draftSettings&&<ApiSettingsModal draftSettings={draftSettings} setDraftSettings={setDraftSettings} envNames={envNames} onClose={()=>setSettingsOpen(false)} onSave={saveApiSettings}/>}
+    <ProjectBatchDialog batch={batch} storageLabel={storageLabel}/>
     {deleting&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget&&!deleteBusy)setDeleting(null)}}><div className="project-delete-modal" role="dialog" aria-modal="true" aria-labelledby="project-delete-title" onKeyDown={e=>{if(e.key==='Escape'&&!deleteBusy)setDeleting(null)}}><div className="project-delete-icon"><Trash2 size={22}/></div><h2 id="project-delete-title">删除画布？</h2><p>确定永久删除「{deleting.title}」吗？此操作无法撤销。当前启用的 NAS、Cloudflare 存储中均会删除此画布。</p>{deleteError&&<p className="project-delete-error" role="alert">{deleteError}</p>}<div className="project-delete-actions"><button className="secondary-button" type="button" autoFocus disabled={deleteBusy} onClick={()=>setDeleting(null)}>取消</button><button className="project-delete-confirm" type="button" disabled={deleteBusy} onClick={confirmDelete}>{deleteBusy?'删除中…':'确认删除'}</button></div></div></div>}
   </div>;
 }
@@ -346,8 +352,14 @@ function ProjectApp(){
   const backToProjects=useCallback(()=>{const url=new URL(location.href);url.searchParams.delete('project');history.replaceState(null,'',url);setProjectId(null)},[]);
   const newProject=useCallback(async()=>{if(creating)return;setCreating(true);try{openProject(await createProject())}catch(e){setError(e.message||'新建画布失败')}finally{setCreating(false)}},[creating,openProject]);
   const deleteSelected=useCallback(async id=>{try{await deleteProject(id);setProjects(await listProjects());setError('')}catch(e){setError(e.message||'删除画布失败');throw e}},[]);
+  const deleteSelectedMany=useCallback(async(ids,onProgress)=>{
+    const result=await deleteProjectBatch(ids,onProgress),deleted=new Set(result.deletedIds);
+    setProjects(previous=>previous.filter(project=>!deleted.has(project.id)));
+    try{setProjects(await listProjects());setError('')}catch(cause){setError(`删除操作已处理，但项目列表刷新失败：${cause.message}`)}
+    return result;
+  },[]);
   const exportAll=useCallback(async()=>{try{const bundle=await exportWorkspace();const blob=new Blob([JSON.stringify(bundle)],{type:'application/json'});const url=URL.createObjectURL(blob);const anchor=document.createElement('a');anchor.href=url;anchor.download='canvas-studio-backup-'+new Date().toISOString().slice(0,10)+'.json';anchor.click();setTimeout(()=>URL.revokeObjectURL(url),30000)}catch(e){setError(e.message||'导出失败')}},[]);
-  return projectId?<ReactFlowProvider key={projectId}><CanvasEditor projectId={projectId} onBack={backToProjects} theme={theme} setTheme={setTheme}/></ReactFlowProvider>:<ProjectPage projects={projects} loading={loading} error={error} creating={creating} onCreate={newProject} onOpen={openProject} onDelete={deleteSelected} onRetry={refresh} onExport={exportAll} theme={theme} setTheme={setTheme}/>;
+  return projectId?<ReactFlowProvider key={projectId}><CanvasEditor projectId={projectId} onBack={backToProjects} theme={theme} setTheme={setTheme}/></ReactFlowProvider>:<ProjectPage projects={projects} loading={loading} error={error} creating={creating} onCreate={newProject} onOpen={openProject} onDelete={deleteSelected} onDeleteMany={deleteSelectedMany} onRetry={refresh} onExport={exportAll} theme={theme} setTheme={setTheme}/>;
 }
 
 createRoot(document.getElementById('root')).render(<ProjectApp/>);
