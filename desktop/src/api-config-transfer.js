@@ -1,4 +1,5 @@
 export const CONFIG_FORMAT='canvas-studio-api-settings';
+import {fixedImageProfiles,DEFAULT_TEXT_NAME} from './profile-slots.js';
 const string=(value,max=4096)=>typeof value==='string'?value.slice(0,max):'';
 const readConfigText=raw=>{
   const content=raw.trim();
@@ -10,7 +11,8 @@ const readConfigText=raw=>{
 
 export function parseApiConfig(raw,current){
   const input=JSON.parse(readConfigText(raw));
-  if(input?.format!==CONFIG_FORMAT||input.version!==1||!Array.isArray(input.imageProfiles)||input.imageProfiles.length<1||input.imageProfiles.length>30)throw new Error('请选择 Canvas Studio 导出的 API 配置文件');
+  if(input?.format!==CONFIG_FORMAT||input.version!==1||!Array.isArray(input.imageProfiles)||input.imageProfiles.length<1)throw new Error('请选择 Canvas Studio 导出的 API 配置文件');
+  if(input.imageProfiles.length>2)throw new Error('当前界面固定两个生图 API；请先在原设备导出或整理多余配置');
   const used=new Set();
   const imageProfiles=input.imageProfiles.map((item,index)=>{
     if(!item||typeof item!=='object')throw new Error('图像 API 配置格式错误');
@@ -20,17 +22,16 @@ export function parseApiConfig(raw,current){
     used.add(id);
     return {id,name:string(item.name,80)||`图像 API ${index+1}`,baseUrl,model,key:string(item.key),keyEnv:''};
   });
-  for(const item of current.imageProfiles)if(!used.has(item.id))imageProfiles.push(item);
-  if(imageProfiles.length>30)throw new Error('导入后图像 API 超过 30 项，请先删除部分配置');
+  if(imageProfiles.length<2){const spare=current.imageProfiles.find(item=>!used.has(item.id));if(spare)imageProfiles.push(spare)}
   const text=input.text||{};
-  return {imageProfiles,text:{baseUrl:string(text.baseUrl,500),model:string(text.model,120),key:string(text.key),keyEnv:''}};
+  return {imageProfiles:fixedImageProfiles(imageProfiles),text:{name:string(text.name,80)||DEFAULT_TEXT_NAME,baseUrl:string(text.baseUrl,500),model:string(text.model,120),key:string(text.key),keyEnv:''}};
 }
 
 export async function exportApiConfig(settings,localMode){
   const configured=(entry)=>Boolean(entry?.baseUrl?.trim()||entry?.model?.trim()||entry?.key?.trim()||entry?.keyEnv?.trim());
   if(!settings?.imageProfiles?.some(configured)&&!configured(settings?.text))throw new Error('当前浏览器没有已填写的 API 配置。请到已配置的浏览器导出，或先在这里填写并保存设置。');
-  const imageProfiles=settings.imageProfiles.map(({id,name,baseUrl,model,key,keyEnv})=>({id,name,baseUrl,model,key:key||'',keyEnv:keyEnv||''}));
-  const text={...settings.text};
+  const imageProfiles=fixedImageProfiles(settings.imageProfiles).map(({id,name,baseUrl,model,key,keyEnv})=>({id,name,baseUrl,model,key:key||'',keyEnv:keyEnv||''}));
+  const text={...settings.text,name:settings.text?.name||DEFAULT_TEXT_NAME};
   if(localMode){
     const names=[...new Set([...imageProfiles.map(item=>item.keyEnv),text.keyEnv].filter(Boolean))];
     if(names.length){
