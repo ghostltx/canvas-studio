@@ -12,6 +12,7 @@ import {loadSettings,saveSettings,firstImageProfile,selectedImageProfile,profile
 import ImageProfileEditor from './ImageProfileEditor';
 import ApiConfigTransfer from './ApiConfigTransfer';
 import StorageSwitches from './StorageSwitches';
+import ProjectStorageStatus from './ProjectStorageStatus';
 import {ImageToolToolbar,ImageToolDialog} from './ImageTools';
 import {loadDocument,saveDocument,listProjects,createProject,deleteProject,exportWorkspace,getStorageMode,setStorageMode} from './db';
 
@@ -134,7 +135,7 @@ function ProjectPage({projects,loading,error,creating,onCreate,onOpen,onDelete,o
   const toggleStorage=async kind=>{if(storageBusy)return;setStorageBusy(true);setStorageError('');try{const next=await setStorageMode({...storageMode,[kind]:!storageMode[kind]});setStorageModeState(next);location.reload()}catch(error){setStorageError(error.message||'切换存储失败');setStorageBusy(false)}};
   const visible=projects.filter(project=>project.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   return <div className="app projects-page" data-theme={theme}>
-    <header className="topbar projects-topbar"><div className="brand"><div className="brand-mark"><Sparkles size={19}/></div><div><b>Canvas Studio</b><span>你的创意空间</span></div></div><div className="top-actions"><StorageSwitches mode={storageMode} busy={storageBusy} onToggle={toggleStorage}/><button className="top-button" type="button" onClick={openSettings}><Settings size={17}/> API 设置</button><ThemePicker theme={theme} onSelect={setTheme}/></div></header>
+    <header className="topbar projects-topbar"><div className="projects-identity"><div className="brand"><div className="brand-mark"><Sparkles size={19}/></div><div><b>Canvas Studio</b><span>你的创意空间</span></div></div><ProjectStorageStatus mode={storageMode} busy={storageBusy}/></div><div className="top-actions"><StorageSwitches mode={storageMode} busy={storageBusy} onToggle={toggleStorage}/><button className="top-button" type="button" onClick={openSettings}><Settings size={17}/> API 设置</button><ThemePicker theme={theme} onSelect={setTheme}/></div></header>
     <main className="projects-main"><div className="projects-content">
       <div className="projects-heading"><div><span className="projects-eyebrow">LOCAL WORKSPACE</span><h1>我的项目</h1><p>从这里打开画布，接着上次的内容继续创作。</p></div><div className="project-heading-actions"><button className="workspace-transfer" type="button" onClick={onExport}><Download size={16}/> 导出工作区备份</button><label className="project-search"><Search size={17}/><input aria-label="搜索项目" placeholder="搜索项目名称" value={query} onChange={event=>setQuery(event.target.value)}/></label></div></div>
       <div className="projects-section-title"><strong>全部画布</strong><span>{projects.length} 个项目 · 最近修改优先</span></div>

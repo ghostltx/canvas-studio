@@ -1,0 +1,20 @@
+.projects-identity{display:flex;align-items:center;gap:24px;min-width:0}
+.projects-identity .brand{min-width:0;flex:none}
+.project-storage-status{display:flex;align-items:center;gap:8px;padding-left:22px;border-left:1px solid var(--ui-border,#e9edf3);flex:none}
+.storage-location{position:relative;display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 10px;border:1px solid var(--ui-border,#e9edf3);border-radius:8px;background:var(--ui-inset,#f4f6f9);color:var(--ui-secondary,#697386);cursor:default;outline:none}
+.storage-location-icon{position:relative;display:grid;place-items:center;flex:none}
+.storage-location-label{font-size:14px;font-weight:600;line-height:1;white-space:nowrap;letter-spacing:0}
+.storage-location.active.nas{color:#2376a1;background:color-mix(in srgb,#2e90bd 9%,var(--ui-surface,#fff));border-color:color-mix(in srgb,#2e90bd 28%,var(--ui-border,#e9edf3))}
+.storage-location.active.cloud{color:#b96512;background:color-mix(in srgb,#f59b35 10%,var(--ui-surface,#fff));border-color:color-mix(in srgb,#f59b35 32%,var(--ui-border,#e9edf3))}
+.storage-location.active .storage-location-icon::after{content:"";position:absolute;right:-3px;bottom:-2px;width:6px;height:6px;border-radius:50%;background:#27b46b;box-shadow:0 0 0 2px var(--ui-surface,#fff)}
+.storage-location.inactive{color:var(--ui-muted,#8993a4)}
+.storage-location.inactive .storage-location-icon{opacity:.65}
+.storage-location:focus-visible{outline:2px solid var(--ui-accent,#7056df);outline-offset:3px}
+.storage-location-tooltip{position:absolute;top:calc(100% + 10px);left:0;z-index:40;display:none;width:max-content;max-width:min(270px,calc(100vw - 40px));padding:10px 12px;border:1px solid var(--ui-border,#e9edf3);border-radius:8px;background:var(--ui-surface,#fff);color:var(--ui-secondary,#697386);box-shadow:0 8px 24px var(--ui-shadow,#0002);font-size:12px;line-height:1.6;pointer-events:none}
+.storage-location-tooltip strong{display:block;color:var(--ui-text,#252b3a);font-size:13px;margin-bottom:2px}
+.storage-location:hover .storage-location-tooltip,.storage-location:focus-visible .storage-location-tooltip{display:block}
+.storage-browser-label{font-size:12px;color:var(--ui-secondary,#697386);white-space:nowrap}
+.app[data-theme="graphite"] .storage-location.active.nas{color:#76c5eb}
+.app[data-theme="graphite"] .storage-location.active.cloud{color:#f5ba6e}
+@media(max-width:1100px){.projects-identity{gap:15px}.project-storage-status{padding-left:15px}.projects-identity .brand>div:last-child{display:none}}
+@media(max-width:650px){.projects-identity{gap:10px}.project-storage-status{gap:5px;padding-left:10px}.storage-location{width:34px;padding:0;justify-content:center}.storage-location-label,.storage-browser-label{display:none}.storage-location-tooltip{left:-40px}.projects-topbar .top-actions{min-width:0}}
