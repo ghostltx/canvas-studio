@@ -21,8 +21,8 @@ export async function DELETE(request:Request,{params}:{params:Promise<{id:string
     const {db,bucket}=bindings();
     const owner=await db.prepare('SELECT id FROM canvas_projects WHERE id=? AND user_id=?').bind(id,user).first();
     if(!owner)return json({ok:true});
-    await db.prepare('DELETE FROM canvas_projects WHERE id=? AND user_id=?').bind(id,user).run();
     await bucket.delete(docKey(user,id));
+    await db.prepare('DELETE FROM canvas_projects WHERE id=? AND user_id=?').bind(id,user).run();
     return json({ok:true});
   }catch(error){return failure(error,error instanceof Error&&error.message.includes('授权')?401:500)}
 }
