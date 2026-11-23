@@ -27,6 +27,8 @@ export function parseApiConfig(raw,current){
 }
 
 export async function exportApiConfig(settings,localMode){
+  const configured=(entry)=>Boolean(entry?.baseUrl?.trim()||entry?.model?.trim()||entry?.key?.trim()||entry?.keyEnv?.trim());
+  if(!settings?.imageProfiles?.some(configured)&&!configured(settings?.text))throw new Error('当前浏览器没有已填写的 API 配置。请到已配置的浏览器导出，或先在这里填写并保存设置。');
   const imageProfiles=settings.imageProfiles.map(({id,name,baseUrl,model,key,keyEnv})=>({id,name,baseUrl,model,key:key||'',keyEnv:keyEnv||''}));
   const text={...settings.text};
   if(localMode){
