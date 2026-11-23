@@ -1,3 +1,4 @@
+import ProjectTitle from './ProjectTitle';
 "use client";
 import React, {createContext,useCallback,useContext,useEffect,useMemo,useRef,useState} from 'react';
 import {ReactFlow,ReactFlowProvider,Background,Controls,MiniMap,Handle,NodeResizer,Position,ConnectionLineType,addEdge,useNodesState,useEdgesState,useReactFlow,useUpdateNodeInternals} from '@xyflow/react';
@@ -122,7 +123,7 @@ function ApiSettingsModal({draftSettings,setDraftSettings,envNames,onClose,onSav
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="settings-modal"><div className="modal-head"><div className="modal-icon"><Settings size={20}/></div><div><h2>API 设置</h2><p>图像生成与提示词处理分别连接服务</p></div><button className="icon-button" onClick={()=>onClose()}><X size={20}/></button></div><div className="modal-body"><ImageProfileEditor settings={draftSettings} envNames={LOCAL_MODE?envNames:null} onChange={setDraftSettings}/><ApiConfigTransfer settings={draftSettings} localMode={LOCAL_MODE} onImport={setDraftSettings}/><div className="settings-note">文本服务需支持 OpenAI 兼容的 /chat/completions；图像反推还需支持图片输入。名称、地址、模型和顺序会同步；Key 仅保存在当前浏览器，可通过配置文件迁移。</div></div><div className="modal-footer"><button className="secondary-button" onClick={()=>onClose()}>取消</button><button className="primary-button" onClick={onSave}>保存设置</button></div></div></div>;
 }
 
-function ProjectPage({projects,loading,error,creating,onCreate,onOpen,onDelete,onDeleteMany,onRetry,theme,setTheme}){
+function ProjectPage({projects,loading,error,creating,onCreate,onOpen,onDelete,onDeleteMany,onRename,onRetry,theme,setTheme}){
   const [query,setQuery]=useState('');
   const [deleting,setDeleting]=useState(null),[deleteBusy,setDeleteBusy]=useState(false),[deleteError,setDeleteError]=useState('');
   const [settings,setSettings]=useState(loadSettings),[draftSettings,setDraftSettings]=useState(null),[settingsOpen,setSettingsOpen]=useState(false),[envNames,setEnvNames]=useState([]);
@@ -141,7 +142,7 @@ function ProjectPage({projects,loading,error,creating,onCreate,onOpen,onDelete,o
       {error&&<div className="projects-error" role="alert">{error}<button onClick={onRetry}>重试</button></div>}
       <div className="project-grid">
         <button className="project-card new-project-card" type="button" disabled={creating||batch.active} onClick={onCreate} aria-label="新建空白画布"><span className="project-thumbnail new-project-thumbnail">{creating?<LoaderCircle size={39} className="spin"/>:<Plus size={43} strokeWidth={1.6}/>}</span><span className="project-card-info"><strong>新建空白画布</strong><small>从零开始创作</small></span></button>
-        {visible.map(project=><div className={`project-card ${batch.active?'is-managing':''} ${batch.selected.has(project.id)?'is-selected':''}`} key={project.id}><button className="project-card-open" type="button" disabled={batch.busy} onClick={()=>batch.active?batch.toggle(project.id):onOpen(project.id)} aria-label={`${batch.active?'切换选择':'打开项目'}：${project.title}`} aria-pressed={batch.active?batch.selected.has(project.id):undefined}><span className="project-thumbnail"><ProjectStorageDots locations={project.storageLocations}/>{project.preview?<img src={project.preview} alt=""/>:<span className="project-placeholder"><FolderOpen size={35} strokeWidth={1.5}/></span>}<span className="project-node-count">{project.nodeCount} 个节点</span></span><span className="project-card-info"><strong title={project.title}>{project.title}</strong><small>{projectTime(project.updatedAt)}</small></span></button>{batch.active?<ProjectBatchCheckbox batch={batch} project={project}/>:<button className="project-card-delete" type="button" aria-label={`删除项目：${project.title}`} title="删除项目" onClick={()=>{setDeleteError('');setDeleting(project)}}><Trash2 size={17}/></button>}</div>)}
+        {visible.map(project=><div className={`project-card ${batch.active?'is-managing':''} ${batch.selected.has(project.id)?'is-selected':''}`} key={project.id}><button className="project-card-open" type="button" disabled={batch.busy} onClick={()=>batch.active?batch.toggle(project.id):onOpen(project.id)} aria-label={`${batch.active?'切换选择':'打开项目'}：${project.title}`} aria-pressed={batch.active?batch.selected.has(project.id):undefined}><span className="project-thumbnail"><ProjectStorageDots locations={project.storageLocations}/>{project.preview?<img src={project.preview} alt=""/>:<span className="project-placeholder"><FolderOpen size={35} strokeWidth={1.5}/></span>}<span className="project-node-count">{project.nodeCount} 个节点</span></span></button><ProjectTitle project={project} onOpen={onOpen} onRename={onRename} batch={batch} projectTime={projectTime}/>{batch.active?<ProjectBatchCheckbox batch={batch} project={project}/>:<button className="project-card-delete" type="button" aria-label={`删除项目：${project.title}`} title="删除项目" onClick={()=>{setDeleteError('');setDeleting(project)}}><Trash2 size={17}/></button>}</div>)}
       </div>
       {!loading&&query&&visible.length===0&&<p className="projects-no-results">没有找到匹配的项目</p>}
       {loading&&<div className="projects-loading"><LoaderCircle size={20} className="spin"/> 正在读取本地项目…</div>}
@@ -349,6 +350,12 @@ function ProjectApp(){
   const openProject=useCallback(id=>{const url=new URL(location.href);url.searchParams.set('project',id);history.pushState(null,'',url);setProjectId(id)},[]);
   const backToProjects=useCallback(()=>{const url=new URL(location.href);url.searchParams.delete('project');history.replaceState(null,'',url);setProjectId(null)},[]);
   const newProject=useCallback(async()=>{if(creating)return;setCreating(true);try{openProject(await createProject())}catch(e){setError(e.message||'新建画布失败')}finally{setCreating(false)}},[creating,openProject]);
+  const renameSelected=useCallback(async(id,title)=>{
+    const document=await loadDocument(id);
+    if(!document)throw new Error('找不到该画布，请刷新项目列表');
+    await saveDocument(id,{...document,title});
+    setProjects(previous=>previous.map(project=>project.id===id?{...project,title,updatedAt:new Date().toISOString()}:project).sort((a,b)=>Date.parse(b.updatedAt)-Date.parse(a.updatedAt)));
+  },[]);
   const deleteSelected=useCallback(async id=>{try{await deleteProject(id);setProjects(await listProjects());setError('')}catch(e){setError(e.message||'删除画布失败');throw e}},[]);
   const deleteSelectedMany=useCallback(async(ids,onProgress)=>{
     const result=await deleteProjectBatch(ids,onProgress),deleted=new Set(result.deletedIds);
@@ -356,7 +363,7 @@ function ProjectApp(){
     try{setProjects(await listProjects());setError('')}catch(cause){setError(`删除操作已处理，但项目列表刷新失败：${cause.message}`)}
     return result;
   },[]);
-  return projectId?<ReactFlowProvider key={projectId}><CanvasEditor projectId={projectId} onBack={backToProjects} theme={theme} setTheme={setTheme}/></ReactFlowProvider>:<ProjectPage projects={projects} loading={loading} error={error} creating={creating} onCreate={newProject} onOpen={openProject} onDelete={deleteSelected} onDeleteMany={deleteSelectedMany} onRetry={refresh} theme={theme} setTheme={setTheme}/>;
+  return projectId?<ReactFlowProvider key={projectId}><CanvasEditor projectId={projectId} onBack={backToProjects} theme={theme} setTheme={setTheme}/></ReactFlowProvider>:<ProjectPage projects={projects} loading={loading} error={error} creating={creating} onCreate={newProject} onOpen={openProject} onDelete={deleteSelected} onDeleteMany={deleteSelectedMany} onRename={renameSelected} onRetry={refresh} theme={theme} setTheme={setTheme}/>;
 }
 
 export default ProjectApp;
