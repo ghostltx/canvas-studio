@@ -98,9 +98,15 @@ export async function createProject(){
 
 export async function deleteProject(id){
   const active=stores(getStorageMode());
-  const results=await Promise.allSettled(active.map(store=>store.deleteProject(id)));
-  const failed=results.find(result=>result.status==='rejected');
-  if(failed)throw failed.reason;
+  for(const store of active){
+    if(!store.verifyDelete)continue;
+    try{await store.verifyDelete()}
+    catch(error){throw new Error(`${store.kind==='cloud'?'Cloudflare':'NAS'} 删除接口尚不可用；未删除任何画布。${error.message}`)}
+  }
+  for(const store of [...active].sort((a,b)=>a===cloud?-1:b===cloud?1:0)){
+    try{await store.deleteProject(id)}
+    catch(error){throw new Error(`${storeName(store)} 删除失败：${error.message}。其他存储可能已经删除，重新确认可继续完成删除`)}
+  }
 }
 
 export async function saveDocument(id,document,options){

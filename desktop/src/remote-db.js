@@ -1,7 +1,10 @@
 async function jsonRequest(url,options){
   const response=await fetch(url,options);
-  const result=await response.json();
-  if(!response.ok)throw new Error(result.error||`存储请求失败（HTTP ${response.status}）`);
+  const text=await response.text();
+  let result;
+  try{result=text?JSON.parse(text):null}catch{result=null}
+  if(!response.ok)throw new Error(result?.error||`存储请求失败（HTTP ${response.status}）`);
+  if(!result)throw new Error('存储服务返回了空响应');
   return result;
 }
 
@@ -56,6 +59,7 @@ export function remoteStore(kind){
     listProjects:async()=> (await jsonRequest(`${prefix}/projects`)).projects,
     loadDocument:async id=>{const response=await fetch(`${prefix}/projects/${encodeURIComponent(id)}`);if(response.status===404)return null;const result=await response.json();if(!response.ok)throw new Error(result.error||'读取画布失败');return cloud?{...result,nodes:result.nodes.map(node=>({...node,data:{...node.data,src:localImage(node.data?.src),previousSrc:localImage(node.data?.previousSrc)}}))}:result},
     upsertProject,
+    verifyDelete:async()=>jsonRequest(`${prefix}/projects/00000000-0000-0000-0000-000000000000`,{method:'DELETE'}),
     deleteProject:async id=>jsonRequest(`${prefix}/projects/${encodeURIComponent(id)}`,{method:'DELETE'}),
     createProject:async()=>{const id=crypto.randomUUID(),now=new Date().toISOString(),document={title:'未命名画布',nodes:[],edges:[],viewport:{x:0,y:0,zoom:1}};await upsertProject({id,createdAt:now,updatedAt:now,preview:null},document);return id},
     saveDocument:async(id,document,{touch=true,timestamp=new Date().toISOString()}={})=>{
