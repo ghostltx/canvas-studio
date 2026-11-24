@@ -1,3 +1,4 @@
+import ModelPicker from './ModelPicker';
 import React,{useRef,useState} from 'react';
 import {ArrowLeftRight,Image as ImageIcon,Pencil,Type} from 'lucide-react';
 
@@ -25,13 +26,13 @@ export default function ImageProfileEditor({settings,onChange,envNames=null}){
       <div className="api-config-panel-head"><span className="api-config-panel-icon image"><ImageIcon size={17}/></span><div><EditablePanelTitle name={profile.name} label={`修改生图 API ${index+1} 名称`} onChange={name=>updateImage(index,{name})}/><small>{index===0?'生图 API 1 · 新框默认':'生图 API 2 · 备用'}</small></div>{index===1&&<button type="button" className="api-priority-button" title="设为默认生图 API" onClick={swapImages}><ArrowLeftRight size={13}/>设为默认</button>}</div>
       <label>Base URL<input value={profile.baseUrl} onChange={event=>updateImage(index,{baseUrl:event.target.value})} placeholder="https://example.com/v1"/></label>
       <KeyFields entry={profile} onChange={patch=>updateImage(index,patch)} envNames={envNames} placeholder="图像 API Key"/>
-      <label>模型名称<input value={profile.model} onChange={event=>updateImage(index,{model:event.target.value})} placeholder="例如 gpt-image-2.6"/></label>
+      <ModelPicker entry={profile} label="模型名称" placeholder="例如 gpt-image-2.6" onChange={model=>updateImage(index,{model})}/>
     </section>)}
     <section className="api-config-panel text" aria-label="文本 API">
       <div className="api-config-panel-head"><span className="api-config-panel-icon text"><Type size={17}/></span><div><EditablePanelTitle name={settings.text?.name||'GEMINI flash 3.8'} label="修改文本 API 名称" onChange={name=>updateText({name})}/><small>文本 API · 提示词优化与反推</small></div></div>
       <label>Base URL<input value={settings.text?.baseUrl||''} onChange={event=>updateText({baseUrl:event.target.value})} placeholder="https://example.com/v1"/></label>
       <KeyFields entry={settings.text||{}} onChange={updateText} envNames={envNames} placeholder="文本 API Key"/>
-      <label>文本／视觉模型名称<input value={settings.text?.model||''} onChange={event=>updateText({model:event.target.value})} placeholder="例如 gpt-4.1-mini"/></label>
+      <ModelPicker entry={settings.text||{}} label="文本／视觉模型名称" placeholder="例如 gpt-4.1-mini" onChange={model=>updateText({model})}/>
     </section>
   </div>;
 }

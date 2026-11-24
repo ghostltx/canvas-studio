@@ -229,6 +229,21 @@ http.createServer(async (req,res) => {
   }
   const assetMatch=/^\/api\/assets\/([0-9a-f-]{36})\.(png|jpg|webp)$/i.exec(req.url||'');
   if(req.method==='GET'&&assetMatch){try{const bytes=await readFile(join(assetDir,`${assetMatch[1]}.${assetMatch[2]}`));res.writeHead(200,{'Content-Type':({'png':'image/png','jpg':'image/jpeg','webp':'image/webp'})[assetMatch[2].toLowerCase()],'Content-Length':bytes.length,'Cache-Control':'public,max-age=31536000,immutable'});return res.end(bytes)}catch{return send(res,404,{error:'图片不存在'})}}
+  if(req.method==='POST'&&req.url==='/api/models'){
+    try{
+      const {baseUrl,key}=resolveRequestKey(await readBody(req));
+      if(!baseUrl?.trim()||!key?.trim())throw new Error('请先填写 Base URL 和 API Key');
+      const url=new URL(baseUrl);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw new Error('API 地址无效');
+      url.pathname=url.pathname.replace(/\/+$/,'').replace(/\/(?:images\/(?:generations|edits)|chat\/completions|models)$/,'')+'/models';url.search='';url.hash='';
+      const upstream=await fetch(url,{headers:{Authorization:`Bearer ${key}`},redirect:'error',signal:AbortSignal.timeout(30000)});
+      let result;try{result=await upstream.json()}catch{throw new Error(`模型接口返回了非 JSON 响应（HTTP ${upstream.status}）`)}
+      if(!upstream.ok||result?.error)throw new Error(apiError(result)||`获取模型失败（HTTP ${upstream.status}）`);
+      const items=Array.isArray(result?.data)?result.data:Array.isArray(result?.models)?result.models:null;
+      if(!items)throw new Error('接口未返回兼容的模型列表');
+      const models=[...new Set(items.map(item=>typeof item==='string'?item:item?.id).filter(id=>typeof id==='string'&&id.trim()))].sort((a,b)=>a.localeCompare(b));
+      return send(res,200,{models});
+    }catch(error){return send(res,400,{error:error.message||'获取模型失败'})}
+  }
   if(req.method==='GET'&&req.url==='/api/env-keys')return localOrigin(req)?send(res,200,{names:availableEnvNames()}):send(res,403,{error:'只允许从本地画布读取环境变量名称'});
   if(req.method==='POST'&&req.url==='/api/env-keys/resolve'){
     if(!localOrigin(req))return send(res,403,{error:'只允许从本地画布导出环境变量'});
