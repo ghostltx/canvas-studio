@@ -1,7 +1,8 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {NodeToolbar} from '@xyflow/react';
-import {Palette,Crop,Brush,Eraser,Expand,ScanText,Download,Undo2,X} from 'lucide-react';
+import {Palette,Crop,Brush,Eraser,Expand,ScanText,Undo2,X} from 'lucide-react';
 import {adjustImage,cropImage,maskedImage,expandImage} from './image-operations';
+import ImageDownloadButton from './ImageDownload';
 
 export const TOOLS=[['color','调色',Palette],['crop','裁剪',Crop],['redraw','重绘',Brush],['erase','擦除',Eraser],['expand','扩图',Expand],['removeText','去文字',ScanText]];
 const sliders=[['exposure','曝光'],['contrast','对比度'],['highlights','高光'],['shadows','阴影'],['whites','白色'],['blacks','黑色'],['saturation','饱和度'],['temperature','色温']];
@@ -9,7 +10,7 @@ const initialValues=Object.fromEntries(sliders.map(([key])=>[key,0]));
 const prompts={redraw:'只修改透明蒙版标注的区域，按照用户描述重绘；未选区域保持原貌。',erase:'移除透明蒙版标注的物体，并以周围场景自然补全；未选区域保持原貌。',expand:'在透明区域自然扩展画面，保持原图内容、主体、透视和光照一致。',removeText:'去除画面中所有可见文字、字母、数字、水印和标识，并自然修复原背景；保持其他画面元素不变。'};
 
 export function ImageToolToolbar({nodeId,data,selected,open,undo,busy=false}){
-  return data.src?<NodeToolbar isVisible={selected} position="top" offset={14}><div className="image-node-toolbar nodrag nowheel">{TOOLS.map(([key,label,Icon])=><button key={key} type="button" title={busy?'当前框有任务运行中':label} disabled={busy} onClick={()=>open(nodeId,key)}><Icon size={15}/><span>{label}</span></button>)}<i/><button type="button" title="撤销上一次图片修改" disabled={busy||!data.previousSrc} onClick={()=>undo(nodeId)}><Undo2 size={15}/></button><button type="button" title="下载图片" onClick={()=>{const a=document.createElement('a');a.href=data.src;a.download=(data.title||'图片')+'.png';a.click()}}><Download size={15}/></button></div></NodeToolbar>:null;
+  return data.src?<NodeToolbar isVisible={selected} position="top" offset={14}><div className="image-node-toolbar nodrag nowheel">{TOOLS.map(([key,label,Icon])=><button key={key} type="button" title={busy?'当前框有任务运行中':label} disabled={busy} onClick={()=>open(nodeId,key)}><Icon size={15}/><span>{label}</span></button>)}<i/><button type="button" title="撤销上一次图片修改" disabled={busy||!data.previousSrc} onClick={()=>undo(nodeId)}><Undo2 size={15}/></button><ImageDownloadButton src={data.src} name={(data.title||'图片')+'.png'}/></div></NodeToolbar>:null;
 }
 
 export function ImageToolDialog({tool,node,profiles,onClose,onLocalSave,onAiSubmit}){
