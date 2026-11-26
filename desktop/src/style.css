@@ -12,3 +12,6 @@
 
 .generate-optimize-row{display:flex;justify-content:flex-end;margin:-2px 0 9px}
 .generate-optimize-row .optimize-button{padding:6px 9px}
+
+
+.generate-label-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}.generate-label-row .field-label{margin:0}.preview-toggle{display:inline-flex;align-items:center;gap:4px;border:1px solid #e5e1f7;border-radius:7px;background:#f7f5ff;color:#7056df;font-size:10px;padding:4px 6px;white-space:nowrap}.preview-toggle:hover:not(:disabled){background:#eeeaff}.preview-toggle:disabled{opacity:.45;cursor:default}.preview-closed{display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;color:#9ca3b2;font-size:11px}
