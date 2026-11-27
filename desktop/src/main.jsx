@@ -3,9 +3,9 @@ import ImageDownloadButton,{download} from './ImageDownload';
 import SizePicker from './SizePicker';
 import GeneratedImage from './GeneratedImage';
 import './image-download.css';
-import React, {createContext,useCallback,useContext,useEffect,useMemo,useRef,useState} from 'react';
+import React, {createContext,useCallback,useContext,useEffect,useId,useMemo,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {ReactFlow,ReactFlowProvider,Background,Controls,MiniMap,Handle,NodeResizer,Position,ConnectionLineType,addEdge,useNodesState,useEdgesState,useReactFlow,useUpdateNodeInternals} from '@xyflow/react';
+import {ReactFlow,ReactFlowProvider,Background,Controls,MiniMap,Handle,NodeResizer,Position,ConnectionLineType,BaseEdge,getBezierPath,applyNodeChanges,addEdge,useNodesState,useEdgesState,useReactFlow,useUpdateNodeInternals} from '@xyflow/react';
 import {Type, Image as ImageIcon, Sparkles, Settings, Palette, ChevronDown, ArrowLeft, Plus, Search, FolderOpen, Download, X, MousePointer2, Check, AlertCircle, LoaderCircle, Pencil, PenLine, Layers3, Trash2, Eye, EyeOff} from 'lucide-react';
 import '@xyflow/react/dist/style.css';
 import './style.css';
@@ -16,12 +16,13 @@ import './storage-switches.css';
 import {loadSettings,saveSettings,firstImageProfile,selectedImageProfile,profileMetadata,mergeRemoteProfiles} from './image-profiles';
 import ImageProfileEditor from './ImageProfileEditor';
 import ApiConfigTransfer from './ApiConfigTransfer';
+import {applyImportedStorage} from './api-config-transfer';
 import StorageSwitches from './StorageSwitches';
 import ProjectStorageStatus,{ProjectStorageDots} from './ProjectStorageStatus';
 import {useProjectBatch,ProjectBatchButton,ProjectBatchToolbar,ProjectBatchCheckbox,ProjectBatchDialog} from './ProjectBatchActions';
 import {deleteProjectBatch} from './project-batch';
 import {ImageToolToolbar,ImageToolDialog} from './ImageTools';
-import {loadDocument,saveDocument,listProjects,createProject,deleteProject,exportWorkspace,getStorageMode,setStorageMode} from './db';
+import {loadDocument,saveDocument,listProjects,createProject,deleteProject,exportWorkspace,getStorageMode,setStorageMode,restoreStorageMode} from './db';
 
 const LOCAL_MODE=true;
 const CanvasContext=createContext(null);
@@ -32,11 +33,42 @@ const starter=[
   {id:'welcome-generate',type:'generate',position:{x:580,y:155},data:{title:'生成图像',size:'2048x2048'}},
 ];
 const starterEdges=[{id:'welcome-link',source:'welcome-text',target:'welcome-generate',type:'default'}];
-// Animate only links feeding a generation that is currently running. Follow upstream inputs too.
+function CanvasEdge({
+  id,sourceX,sourceY,sourcePosition,targetX,targetY,targetPosition,data,label,labelStyle,labelShowBg,
+  labelBgStyle,labelBgPadding,labelBgBorderRadius,markerStart,markerEnd,style,interactionWidth
+}){
+  const [path,labelX,labelY]=getBezierPath({sourceX,sourceY,sourcePosition,targetX,targetY,targetPosition});
+  const gradientId=useId();
+  const glowing=data?.running&&(sourceX!==targetX||sourceY!==targetY);
+  return <>
+    <BaseEdge id={id} path={path} labelX={labelX} labelY={labelY}
+      {...{label,labelStyle,labelShowBg,labelBgStyle,labelBgPadding,labelBgBorderRadius,markerStart,markerEnd,style,interactionWidth}}
+      className={glowing?'edge-running':undefined}/>
+    {glowing&&<g className="edge-light" pointerEvents="none" aria-hidden="true">
+      <defs><linearGradient id={gradientId}>
+        <stop stopColor="var(--ui-accent)" stopOpacity="0"/>
+        <stop offset=".7" stopColor="var(--ui-accent)"/>
+        <stop offset=".88" stopColor="#fff"/>
+        <stop offset="1" stopColor="var(--ui-accent)" stopOpacity="0"/>
+      </linearGradient></defs>
+      <ellipse cx="-8" rx="18" ry="2" fill={`url(#${gradientId})`}>
+        <animateMotion path={path} rotate="auto" dur="1.5s" repeatCount="indefinite"/>
+      </ellipse>
+    </g>}
+  </>;
+}
+const edgeTypes={canvas:CanvasEdge};
+
+// Follow only enabled inputs feeding a running generation.
 const activeGenerationEdges=(edges,nodes,runningIds)=>{
-  const types=new Map(nodes.map(node=>[node.id,node.type]));
+  const types=new Map(nodes.filter(node=>!node.data.disabled).map(node=>[node.id,node.type]));
   const incoming=new Map();
-  for(const edge of edges){const list=incoming.get(edge.target)||[];list.push(edge);incoming.set(edge.target,list)}
+  for(const edge of edges){
+    if(!types.has(edge.source)||!types.has(edge.target))continue;
+    const list=incoming.get(edge.target)||[];
+    list.push(edge);
+    incoming.set(edge.target,list);
+  }
   const active=new Set(),visited=new Set();
   const visit=nodeId=>{
     if(visited.has(nodeId))return;
@@ -101,7 +133,7 @@ const SIZE_PRESETS=[
 const validSize=size=>{if(size==='auto'||size==='1920x1080')return true;const match=/^(\d+)x(\d+)$/.exec(size||'');if(!match)return false;const w=Number(match[1]),h=Number(match[2]);return w%16===0&&h%16===0&&w<=3840&&h<=3840&&w/h>=1/3&&w/h<=3&&w*h>=655360&&w*h<=8294400};
 const minGenerateHeight=data=>data.src?(data.size==='custom'?860:810):(data.size==='custom'?620:570);
 const defaultNodeSize=(type,data={})=>({width:310,height:type==='text'?220:type==='image'?300:type==='lineart'||type==='depth'?460:minGenerateHeight(data)});
-const isImageSource=node=>['image','generate','lineart','depth'].includes(node?.type)&&!!node.data?.src;
+const isImageSource=node=>['image','generate','lineart','depth'].includes(node?.type)&&!node.data?.disabled&&!!node.data?.src;
 const isControlSource=node=>node?.type==='lineart'||node?.type==='depth';
 const readFile=file=>new Promise((resolve,reject)=>{if(!file?.type?.startsWith('image/')) return reject(new Error('请选择图片文件'));const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('图片读取失败'));reader.readAsDataURL(file)});
 const blobToDataUrl=blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('无法读取处理后的图像'));reader.readAsDataURL(blob)});
@@ -134,14 +166,25 @@ function processLocally(mode,src) {
   return new Promise((resolve,reject)=>{const requestId=id();pendingProcesses.set(requestId,{resolve,reject});processWorker.postMessage({id:requestId,mode,src})});
 }
 
-function NodeError({message}){return message?<div className="node-error nodrag nowheel" role="alert"><AlertCircle size={15}/><span>{message}</span></div>:null}
+function NodeError({message,nodeId}){
+  const {updateNode}=useCanvas();
+  if(!message)return null;
+  return <div className="node-error nodrag nowheel" role="alert">
+    <AlertCircle size={15}/>
+    <div className="node-error-message">{message}</div>
+    <button type="button" className="icon-button node-error-dismiss" aria-label="关闭错误提示" title="关闭错误提示" onClick={event=>{
+      event.stopPropagation();
+      updateNode(nodeId,{error:null});
+    }}><X size={15}/></button>
+  </div>;
+}
 
 function NodeHeader({icon,title,kind}){
   return <div className="node-header"><span className={`node-icon ${kind}`}>{icon}</span><span className="node-title" title={title||''}>{title||''}</span><span className="node-kind">{kind==='text'?'TEXT':kind==='image'?'IMAGE':kind==='lineart'?'LINE ART':kind==='depth'?'DEPTH':'GENERATE'}</span></div>;
 }
-function TextNode({id:nodeId,data,selected}){const {updateNode,resizeNode,reversePrompt,optimizePrompt,reversingIds,optimizingIds,edges,nodes}=useCanvas();const textRef=useRef(null),lastInput=useRef(data.text||''),composing=useRef(false);useEffect(()=>{const next=data.text||'';if(!composing.current&&next!==lastInput.current){if(textRef.current)textRef.current.value=next;lastInput.current=next}},[data.text]);const sources=edges.filter(e=>e.target===nodeId).map(e=>nodes.find(n=>n.id===e.source)).filter(isImageSource);return <div className={`canvas-node text-node ${selected?'selected':''}`}><NodeResizer isVisible={selected} minWidth={240} minHeight={180} color="#7056df" onResizeEnd={(_,p)=>resizeNode(nodeId,p.width,p.height)}/><Handle type="target" position={Position.Left}/><NodeHeader icon={<Type size={16}/>} title={data.title} kind="text" id={nodeId}/><textarea ref={textRef} className="nodrag nowheel" placeholder={sources.length?'点击反推，根据连接的图片生成提示词…':'写下提示词…'} defaultValue={data.text||''} readOnly={optimizingIds.has(nodeId)} onCompositionStart={()=>{composing.current=true}} onCompositionEnd={e=>{composing.current=false;lastInput.current=e.currentTarget.value;updateNode(nodeId,{text:e.currentTarget.value})}} onChange={e=>{if(composing.current||e.nativeEvent.isComposing)return;lastInput.current=e.target.value;updateNode(nodeId,{text:e.target.value})}}/><div className="prompt-actions"><span>{sources.length?`${sources.length} 张图片已连接`:'输入想法后可让 AI 扩写'}</span><div className="prompt-action-buttons"><button className="optimize-button nodrag" type="button" disabled={optimizingIds.has(nodeId)||reversingIds.has(nodeId)||!data.text?.trim()} onClick={()=>optimizePrompt(nodeId)}>{optimizingIds.has(nodeId)?<LoaderCircle size={14} className="spin"/>:<Sparkles size={14}/>} {optimizingIds.has(nodeId)?'优化中…':'优化提示词'}</button>{sources.length>0&&<button className="reverse-button nodrag" type="button" disabled={reversingIds.has(nodeId)||optimizingIds.has(nodeId)} onClick={()=>reversePrompt(nodeId)}>{reversingIds.has(nodeId)?<LoaderCircle size={14} className="spin"/>:<Sparkles size={14}/>} {reversingIds.has(nodeId)?'反推中…':'反推'}</button>}</div></div><NodeError message={data.error}/><div className="node-footer"><span>{sources.length?'图像反推提示词':'提示词'}</span><span>拖动右侧圆点连接</span></div><Handle type="source" position={Position.Right}/></div>}
+function TextNode({id:nodeId,data,selected}){const {updateNode,resizeNode,reversePrompt,optimizePrompt,reversingIds,optimizingIds,edges,nodes}=useCanvas();const textRef=useRef(null),lastInput=useRef(data.text||''),composing=useRef(false);useEffect(()=>{const next=data.text||'';if(!composing.current&&next!==lastInput.current){if(textRef.current)textRef.current.value=next;lastInput.current=next}},[data.text]);const sources=edges.filter(e=>e.target===nodeId).map(e=>nodes.find(n=>n.id===e.source)).filter(isImageSource);return <div className={`canvas-node text-node ${selected?'selected':''}`}><NodeResizer isVisible={selected} minWidth={240} minHeight={180} color="#7056df" onResizeEnd={(_,p)=>resizeNode(nodeId,p.width,p.height)}/><Handle type="target" position={Position.Left}/><NodeHeader icon={<Type size={16}/>} title={data.title} kind="text" id={nodeId}/><textarea ref={textRef} className="nodrag nowheel" placeholder={sources.length?'点击反推，根据连接的图片生成提示词…':'写下提示词…'} defaultValue={data.text||''} readOnly={optimizingIds.has(nodeId)} onCompositionStart={()=>{composing.current=true}} onCompositionEnd={e=>{composing.current=false;lastInput.current=e.currentTarget.value;updateNode(nodeId,{text:e.currentTarget.value})}} onChange={e=>{if(composing.current||e.nativeEvent.isComposing)return;lastInput.current=e.target.value;updateNode(nodeId,{text:e.target.value})}}/><div className="prompt-actions"><span>{sources.length?`${sources.length} 张图片已连接`:'输入想法后可让 AI 扩写'}</span><div className="prompt-action-buttons"><button className="optimize-button nodrag" type="button" disabled={optimizingIds.has(nodeId)||reversingIds.has(nodeId)||!data.text?.trim()} onClick={()=>optimizePrompt(nodeId)}>{optimizingIds.has(nodeId)?<LoaderCircle size={14} className="spin"/>:<Sparkles size={14}/>} {optimizingIds.has(nodeId)?'优化中…':'优化提示词'}</button>{sources.length>0&&<button className="reverse-button nodrag" type="button" disabled={reversingIds.has(nodeId)||optimizingIds.has(nodeId)} onClick={()=>reversePrompt(nodeId)}>{reversingIds.has(nodeId)?<LoaderCircle size={14} className="spin"/>:<Sparkles size={14}/>} {reversingIds.has(nodeId)?'反推中…':'反推'}</button>}</div></div><NodeError message={data.error} nodeId={nodeId}/><div className="node-footer"><span>{sources.length?'图像反推提示词':'提示词'}</span><span>拖动右侧圆点连接</span></div><Handle type="source" position={Position.Right}/></div>}
 function ImageNode({id:nodeId,data,selected}){const {resizeNode,openImageTool,undoImage,runningIds}=useCanvas();return <div className={`canvas-node image-node ${selected?'selected':''}`}><ImageToolToolbar nodeId={nodeId} data={data} selected={selected} open={openImageTool} undo={undoImage} busy={runningIds.has(nodeId)}/><NodeResizer isVisible={selected} minWidth={220} minHeight={180} color="#7056df" onResizeEnd={(_,p)=>resizeNode(nodeId,p.width,p.height)}/><Handle type="target" position={Position.Left}/><NodeHeader icon={<ImageIcon size={16}/>} title={data.title} kind="image" id={nodeId}/><div className="image-frame">{data.src?<img src={data.src} alt={data.title||'画布图片'} draggable="false"/>:<span>暂无图片</span>}</div><div className="node-footer"><span>{data.origin==='generated'?'生成结果':'参考图片'}</span><button className="icon-button nodrag" title="保存图片" onClick={()=>download(data.src,`${(data.title||'image').replace(/[\\/:*?"<>|]/g,'-')}.png`)}><Download size={15}/></button></div><Handle type="source" position={Position.Right}/></div>}
-function GenerateNode({id:nodeId,data,selected}){const {updateNode,resizeNode,runGeneration,optimizePrompt,runningIds,optimizingIds,edges,nodes,settings,openImageTool,undoImage}=useCanvas();const promptRef=useRef(null),lastPrompt=useRef(data.prompt||''),composingPrompt=useRef(false);useEffect(()=>{const next=data.prompt||'';if(!composingPrompt.current&&next!==lastPrompt.current){if(promptRef.current)promptRef.current.value=next;lastPrompt.current=next}},[data.prompt]);const inputs=edges.filter(e=>e.target===nodeId).map(e=>nodes.find(n=>n.id===e.source)).filter(Boolean);const imageCount=inputs.filter(isImageSource).length;const hasTextInput=inputs.some(n=>n.type==='text');return <div className={`canvas-node generate-node ${data.src?'with-result':''} ${selected?'selected':''}`} onKeyDown={e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'&&!e.repeat&&!e.nativeEvent.isComposing){e.preventDefault();e.stopPropagation();if(!runningIds.has(nodeId))runGeneration(nodeId)}}}><ImageToolToolbar nodeId={nodeId} data={data} selected={selected} open={openImageTool} undo={undoImage} busy={runningIds.has(nodeId)}/><NodeResizer isVisible={selected} minWidth={300} minHeight={minGenerateHeight(data)} color="#7056df" onResizeEnd={(_,p)=>resizeNode(nodeId,p.width,p.height)}/><Handle type="target" position={Position.Left}/><NodeHeader icon={<Sparkles size={16}/>} title={data.title} kind="generate" id={nodeId}/><div className="generate-body"><div className="generate-label-row"><label className="field-label" htmlFor={`prompt-${nodeId}`}>画面描述</label><button type="button" className="preview-toggle nodrag" disabled={!data.src} aria-label={data.previewOpen===false?'显示图片预览':'关闭图片预览'} aria-pressed={data.previewOpen!==false} title={data.previewOpen===false?'显示图片预览':'关闭图片预览'} onClick={()=>updateNode(nodeId,{previewOpen:data.previewOpen===false})}>{data.previewOpen===false?<EyeOff size={14}/>:<Eye size={14}/>}<span>{data.previewOpen===false?'预览已关闭':'预览已开启'}</span></button></div><textarea className="generate-prompt nodrag nowheel" id={`prompt-${nodeId}`} placeholder={imageCount?'描述希望如何修改参考图片…':hasTextInput?'可在这里补充左侧文字；两处内容会一起用于生成…':'描述你想生成的画面…'} ref={promptRef} defaultValue={data.prompt||''} onCompositionStart={()=>{composingPrompt.current=true}} onCompositionEnd={e=>{composingPrompt.current=false;lastPrompt.current=e.currentTarget.value;updateNode(nodeId,{prompt:e.currentTarget.value})}} onChange={e=>{if(composingPrompt.current||e.nativeEvent.isComposing)return;lastPrompt.current=e.target.value;updateNode(nodeId,{prompt:e.target.value})}}/><div className="generate-optimize-row"><button className="optimize-button nodrag" type="button" disabled={optimizingIds.has(nodeId)||runningIds.has(nodeId)||!data.prompt?.trim()} onClick={()=>optimizePrompt(nodeId)}>{optimizingIds.has(nodeId)?<LoaderCircle size={14} className="spin"/>:<Sparkles size={14}/>} {optimizingIds.has(nodeId)?'优化中…':'优化提示词'}</button></div><label className="field-label" htmlFor={`model-${nodeId}`}>图像模型</label><select className="nodrag" id={`model-${nodeId}`} value={(selectedImageProfile(settings,data.imageProfileId)||firstImageProfile(settings))?.id||''} onChange={e=>updateNode(nodeId,{imageProfileId:e.target.value})}>{settings.imageProfiles.map(profile=><option key={profile.id} value={profile.id}>{profile.name} · {profile.model||'未设置模型'}</option>)}</select><SizePicker id={`size-${nodeId}`} value={data.size||'2048x2048'} presets={SIZE_PRESETS} onChange={size=>updateNode(nodeId,{size})}/>{data.size==='custom'&&<div className="custom-size"><input className="nodrag" type="number" min="16" max="3840" step="16" value={data.customWidth||2880} aria-label="自定义宽度" onChange={e=>updateNode(nodeId,{customWidth:e.target.value})}/><span>×</span><input className="nodrag" type="number" min="16" max="3840" step="16" value={data.customHeight||2880} aria-label="自定义高度" onChange={e=>updateNode(nodeId,{customHeight:e.target.value})}/></div>}<button className="run-button nodrag" title="生成图像（Ctrl+Enter）" disabled={runningIds.has(nodeId)} onClick={()=>runGeneration(nodeId)}>{runningIds.has(nodeId)?<><LoaderCircle size={16} className="spin"/>生成中…</>:<><Sparkles size={16}/>开始生成</>}</button></div>{data.src&&(data.previewOpen===false?<div className="generate-result preview-closed"><EyeOff size={21}/><span>图片预览已关闭</span></div>:<GeneratedImage src={data.src} nodeId={nodeId} resizeNode={resizeNode}/>)}<NodeError message={data.error}/><div className="node-footer"><span>{data.src?'生成结果已保存在当前节点':hasTextInput?'连接文字与本框描述会一起用于生成':'填写画面描述或连接文字后生成'}</span>{data.src&&<button className="icon-button nodrag" title="保存生成图片" onClick={()=>download(data.src,`${(data.title||'generated').replace(/[\\/:*?"<>|]/g,'-')}.png`)}><Download size={15}/></button>}</div><Handle type="source" position={Position.Right}/></div>}
+function GenerateNode({id:nodeId,data,selected}){const {updateNode,resizeNode,runGeneration,optimizePrompt,runningIds,optimizingIds,edges,nodes,settings,openImageTool,undoImage}=useCanvas();const [previewOpen,setPreviewOpen]=useState(false);const promptRef=useRef(null),lastPrompt=useRef(data.prompt||''),composingPrompt=useRef(false);useEffect(()=>{const next=data.prompt||'';if(!composingPrompt.current&&next!==lastPrompt.current){if(promptRef.current)promptRef.current.value=next;lastPrompt.current=next}},[data.prompt]);const inputs=edges.filter(e=>e.target===nodeId).map(e=>nodes.find(n=>n.id===e.source)).filter(Boolean);const imageCount=inputs.filter(isImageSource).length;const hasTextInput=inputs.some(n=>n.type==='text');return <div className={`canvas-node generate-node ${data.src?'with-result':''} ${selected?'selected':''}`} onKeyDown={e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'&&!e.repeat&&!e.nativeEvent.isComposing){e.preventDefault();e.stopPropagation();if(!runningIds.has(nodeId))runGeneration(nodeId)}}}><ImageToolToolbar nodeId={nodeId} data={data} selected={selected} open={openImageTool} undo={undoImage} busy={runningIds.has(nodeId)}/><NodeResizer isVisible={selected} minWidth={300} minHeight={minGenerateHeight(data)} color="#7056df" onResizeEnd={(_,p)=>resizeNode(nodeId,p.width,p.height)}/><Handle type="target" position={Position.Left}/><NodeHeader icon={<Sparkles size={16}/>} title={data.title} kind="generate" id={nodeId}/><div className="generate-body"><div className="generate-label-row"><label className="field-label" htmlFor={`prompt-${nodeId}`}>画面描述</label><button type="button" className="preview-toggle nodrag" disabled={!data.src} aria-label={!previewOpen?'显示图片预览':'关闭图片预览'} aria-pressed={previewOpen} title={!previewOpen?'显示图片预览':'关闭图片预览'} onClick={()=>setPreviewOpen(open=>!open)}>{!previewOpen?<EyeOff size={14}/>:<Eye size={14}/>}<span>{!previewOpen?'大图预览':'收起大图'}</span></button></div><textarea className="generate-prompt nodrag nowheel" id={`prompt-${nodeId}`} placeholder={imageCount?'描述希望如何修改参考图片…':hasTextInput?'可在这里补充左侧文字；两处内容会一起用于生成…':'描述你想生成的画面…'} ref={promptRef} defaultValue={data.prompt||''} onCompositionStart={()=>{composingPrompt.current=true}} onCompositionEnd={e=>{composingPrompt.current=false;lastPrompt.current=e.currentTarget.value;updateNode(nodeId,{prompt:e.currentTarget.value})}} onChange={e=>{if(composingPrompt.current||e.nativeEvent.isComposing)return;lastPrompt.current=e.target.value;updateNode(nodeId,{prompt:e.target.value})}}/><div className="generate-optimize-row"><button className="optimize-button nodrag" type="button" disabled={optimizingIds.has(nodeId)||runningIds.has(nodeId)||!data.prompt?.trim()} onClick={()=>optimizePrompt(nodeId)}>{optimizingIds.has(nodeId)?<LoaderCircle size={14} className="spin"/>:<Sparkles size={14}/>} {optimizingIds.has(nodeId)?'优化中…':'优化提示词'}</button></div><label className="field-label" htmlFor={`model-${nodeId}`}>图像模型</label><select className="nodrag" id={`model-${nodeId}`} value={(selectedImageProfile(settings,data.imageProfileId)||firstImageProfile(settings))?.id||''} onChange={e=>updateNode(nodeId,{imageProfileId:e.target.value})}>{settings.imageProfiles.map(profile=><option key={profile.id} value={profile.id}>{profile.name} · {profile.model||'未设置模型'}</option>)}</select><SizePicker id={`size-${nodeId}`} value={data.size||'2048x2048'} presets={SIZE_PRESETS} onChange={size=>updateNode(nodeId,{size})}/>{data.size==='custom'&&<div className="custom-size"><input className="nodrag" type="number" min="16" max="3840" step="16" value={data.customWidth||2880} aria-label="自定义宽度" onChange={e=>updateNode(nodeId,{customWidth:e.target.value})}/><span>×</span><input className="nodrag" type="number" min="16" max="3840" step="16" value={data.customHeight||2880} aria-label="自定义高度" onChange={e=>updateNode(nodeId,{customHeight:e.target.value})}/></div>}<button className="run-button nodrag" title="生成图像（Ctrl+Enter）" disabled={runningIds.has(nodeId)} onClick={()=>runGeneration(nodeId)}>{runningIds.has(nodeId)?<><LoaderCircle size={16} className="spin"/>生成中…</>:<><Sparkles size={16}/>开始生成</>}</button></div>{data.src&&<GeneratedImage src={data.src} nodeId={nodeId} resizeNode={resizeNode}/>}<NodeError message={data.error} nodeId={nodeId}/><div className="node-footer"><span>{data.src?'生成结果已保存在当前节点':hasTextInput?'连接文字与本框描述会一起用于生成':'填写画面描述或连接文字后生成'}</span>{data.src&&<button className="icon-button nodrag" title="保存生成图片" onClick={()=>download(data.src,`${(data.title||'generated').replace(/[\\/:*?"<>|]/g,'-')}.png`)}><Download size={15}/></button>}</div><Handle type="source" position={Position.Right}/>{previewOpen&&data.src&&<div className="generate-large-preview"><img src={data.src} alt="生成结果大图" draggable="false"/></div>}</div>}
 function ProcessNode({id:nodeId,data,selected,mode}){
   const {resizeNode,runProcess,runningIds,edges,nodes,openImageTool,undoImage}=useCanvas();
   const title=mode==='lineart'?'线稿':'深度图';
@@ -154,7 +197,7 @@ function ProcessNode({id:nodeId,data,selected,mode}){
     <NodeHeader icon={icon} title={data.title||title} kind={mode}/>
     <div className="process-body"><p>{mode==='lineart'?'本地提取图片轮廓，生成黑白线稿':'本地模型估计远近，生成灰度深度图'}</p><button className="run-button nodrag" disabled={runningIds.has(nodeId)} onClick={()=>runProcess(nodeId)}>{runningIds.has(nodeId)?<><LoaderCircle size={16} className="spin"/>处理中…</>:<>{icon}生成{title}</>}</button></div>
     <div className="process-result">{data.src?<img src={data.src} alt={title} draggable="false"/>:<span>{source?'点击上方按钮开始处理':'请从图片框连线到这里'}</span>}</div>
-    <NodeError message={data.error}/>
+    <NodeError message={data.error} nodeId={nodeId}/>
     <div className="node-footer"><span>{data.src?title+'已保存在当前节点':'结果可继续连接到生图框'}</span>{data.src&&<button className="icon-button nodrag" title={'保存'+title} onClick={()=>download(data.src,mode+'.png')}><Download size={15}/></button>}</div>
     <Handle type="source" position={Position.Right}/>
   </div>;
@@ -163,9 +206,9 @@ const LineartNode=props=><ProcessNode {...props} mode="lineart"/>;
 const DepthNode=props=><ProcessNode {...props} mode="depth"/>;
 const nodeTypes={text:TextNode,image:ImageNode,generate:GenerateNode,lineart:LineartNode,depth:DepthNode};
 
-function TaskSidebar({tasks,onLocate,serviceError,storageMode}){
+function TaskSidebar({tasks,onLocate,serviceError,storageMode,onClose}){
   const storageLabel=storageMode.nas&&storageMode.cloud?'任务与结果同步到 NAS 和 Cloudflare':storageMode.nas?'任务与结果同步到 NAS':storageMode.cloud?'任务与结果同步到 Cloudflare':'任务与结果保存在这台电脑的本地服务中';
-  return <aside className="task-sidebar"><div className="task-sidebar-head"><strong>生成任务</strong><span>{tasks.length}</span></div><div className="task-list">{serviceError&&<div className="task-error">{serviceError}</div>}{tasks.length?tasks.map(task=><article className="task-card" key={task.id}><div className="task-card-top"><strong>{task.nodeTitle}</strong><span className={'task-status '+task.status}>{task.status==='running'?<><LoaderCircle size={12} className="spin"/>生成中</>:task.status==='completed'?<><Check size={12}/>已完成</>:<><AlertCircle size={12}/>错误</>}</span></div><div className="task-time">{new Date(task.createdAt).toLocaleString('zh-CN',{hour12:false})} · {task.size}</div><p className="task-prompt">{task.promptPreview}</p>{task.status==='completed'&&<div className="task-preview-wrap"><img className="task-preview" src={task.imageUrl} alt="任务结果" loading="lazy"/><ImageDownloadButton className="task-preview-download" src={task.imageUrl} name={'生成任务-'+task.id+'.png'} label="下载任务图片"/></div>}{task.error&&<div className="task-error">{task.error}</div>}<div className="task-actions"><button onClick={()=>onLocate(task)}>定位框</button></div></article>):<div className="task-empty">提交生图任务后，会在这里显示进度和结果。</div>}</div><div className="task-sidebar-foot">{storageLabel}</div></aside>;
+  return <aside className="task-sidebar" id="generation-task-list"><div className="task-sidebar-head"><strong>生成任务</strong><div className="task-sidebar-controls"><span>{tasks.length}</span><button type="button" className="icon-button" aria-label="关闭任务列表" title="关闭任务列表" onClick={onClose}><X size={17}/></button></div></div><div className="task-list">{serviceError&&<div className="task-error">{serviceError}</div>}{tasks.length?tasks.map(task=><article className="task-card" key={task.id}><div className="task-card-top"><strong>{task.nodeTitle}</strong><span className={'task-status '+task.status}>{task.status==='running'?<><LoaderCircle size={12} className="spin"/>生成中</>:task.status==='completed'?<><Check size={12}/>已完成</>:<><AlertCircle size={12}/>错误</>}</span></div><div className="task-time">{new Date(task.createdAt).toLocaleString('zh-CN',{hour12:false})} · {task.size}</div><p className="task-prompt">{task.promptPreview}</p>{task.status==='completed'&&<div className="task-preview-wrap"><img className="task-preview" src={task.imageUrl} alt="任务结果" loading="lazy"/></div>}{task.error&&<div className="task-error">{task.error}</div>}<div className="task-actions"><button onClick={()=>onLocate(task)}>定位框</button>{task.status==='completed'&&task.imageUrl&&<ImageDownloadButton className="task-preview-download" src={task.imageUrl} name={'生成任务-'+task.id+'.png'} label="下载任务图片"/>}</div></article>):<div className="task-empty">提交生图任务后，会在这里显示进度和结果。</div>}</div><div className="task-sidebar-foot">{storageLabel}</div></aside>;
 }
 
 function ThemePicker({theme,onSelect}){
@@ -183,8 +226,25 @@ function projectTime(value){
   return new Date(value).toLocaleDateString('zh-CN',{year:'numeric',month:'short',day:'numeric'})+' 修改';
 }
 
-function ApiSettingsModal({draftSettings,setDraftSettings,onClose,onSave}){
-  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="settings-modal"><div className="modal-head"><div className="modal-icon"><Settings size={20}/></div><div><h2>API 设置</h2><p>图像生成与提示词处理分别连接服务</p></div><button className="icon-button" onClick={()=>onClose()}><X size={20}/></button></div><div className="modal-body"><ImageProfileEditor settings={draftSettings} onChange={setDraftSettings}/><ApiConfigTransfer settings={draftSettings} localMode={LOCAL_MODE} onImport={setDraftSettings}/><div className="settings-note">文本服务需支持 OpenAI 兼容的 /chat/completions；图像反推还需支持图片输入。API Key 保存在当前浏览器，可通过配置文件迁移。</div></div><div className="modal-footer"><button className="secondary-button" onClick={()=>onClose()}>取消</button><button className="primary-button" onClick={onSave}>保存设置</button></div></div></div>;
+function ApiSettingsModal({draftSettings,setDraftSettings,onClose,onSave,beforeStorageChange}){
+  const [saving,setSaving]=useState(false);
+  const [saveError,setSaveError]=useState('');
+  const commitSettings=async()=>{
+    if(saving)return;
+    const {storage,...apiSettings}=draftSettings;
+    setSaving(true);
+    setSaveError('');
+    try{
+      if(storage)await beforeStorageChange?.();
+      const changed=await applyImportedStorage(storage,restoreStorageMode);
+      onSave(apiSettings);
+      if(changed)location.assign(location.pathname);
+    }catch(error){
+      setSaveError(error.message||'保存设置失败');
+      setSaving(false);
+    }
+  };
+  return <div className="modal-backdrop" onMouseDown={e=>{if(!saving&&e.target===e.currentTarget)onClose()}}><div className="settings-modal"><div className="modal-head"><div className="modal-icon"><Settings size={20}/></div><div><h2>API 设置</h2><p>图像生成与提示词处理分别连接服务</p></div><button className="icon-button" disabled={saving} onClick={()=>onClose()}><X size={20}/></button></div><div className="modal-body"><ImageProfileEditor settings={draftSettings} onChange={setDraftSettings}/><ApiConfigTransfer settings={draftSettings} localMode={LOCAL_MODE} storageMode={getStorageMode()} onImport={setDraftSettings}/><div className="settings-note">文本服务需支持 OpenAI 兼容的 /chat/completions；图像反推还需支持图片输入。API Key 保存在当前浏览器，可通过配置文件迁移。</div>{saveError&&<div className="api-transfer-message" role="alert">{saveError}</div>}</div><div className="modal-footer"><button className="secondary-button" disabled={saving} onClick={()=>onClose()}>取消</button><button className="primary-button" disabled={saving} onClick={commitSettings}>{saving?'保存中…':'保存设置'}</button></div></div></div>;
 }
 
 function ProjectPage({projects,loading,error,creating,onCreate,onOpen,onDelete,onDeleteMany,onRename,onRetry,onExport,theme,setTheme}){
@@ -192,7 +252,7 @@ function ProjectPage({projects,loading,error,creating,onCreate,onOpen,onDelete,o
   const [deleting,setDeleting]=useState(null),[deleteBusy,setDeleteBusy]=useState(false),[deleteError,setDeleteError]=useState('');
   const [settings,setSettings]=useState(loadSettings),[draftSettings,setDraftSettings]=useState(null),[settingsOpen,setSettingsOpen]=useState(false);
   const openSettings=()=>{setDraftSettings({imageProfiles:settings.imageProfiles.map(profile=>({...profile})),text:{...settings.text}});setSettingsOpen(true)};
-  const saveApiSettings=()=>{setSettings(draftSettings);saveSettings(draftSettings);setSettingsOpen(false);};
+  const saveApiSettings=next=>{saveSettings(next);setSettings(next);setSettingsOpen(false);};
   const confirmDelete=async()=>{if(!deleting||deleteBusy)return;setDeleteBusy(true);setDeleteError('');try{await onDelete(deleting.id);setDeleting(null)}catch(error){setDeleteError(error.message||'删除失败，请重试')}finally{setDeleteBusy(false)}};
   const [storageMode,setStorageModeState]=useState(getStorageMode),[storageBusy,setStorageBusy]=useState(false),[storageError,setStorageError]=useState('');
   const toggleStorage=async kind=>{if(storageBusy)return;setStorageBusy(true);setStorageError('');try{const next=await setStorageMode({...storageMode,[kind]:!storageMode[kind]});setStorageModeState(next);location.reload()}catch(error){setStorageError(error.message||'切换存储失败');setStorageBusy(false)}};
@@ -227,13 +287,17 @@ function CanvasEditor({projectId,onBack,theme,setTheme}){
   const [settings,setSettings]=useState(loadSettings),[draftSettings,setDraftSettings]=useState(null),[settingsOpen,setSettingsOpen]=useState(false);
   const [toast,setToast]=useState(null),[runningIds,setRunningIds]=useState(()=>new Set()),[reversingIds,setReversingIds]=useState(()=>new Set()),[optimizingIds,setOptimizingIds]=useState(()=>new Set()),[tasks,setTasks]=useState([]),[taskServiceError,setTaskServiceError]=useState('');
   const [connectionMenu,setConnectionMenu]=useState(null),[activeImageTool,setActiveImageTool]=useState(null);
+  const [tasksOpen,setTasksOpen]=useState(true);
   const activeEdgeIds=useMemo(()=>activeGenerationEdges(edges,nodes,runningIds),[edges,nodes,runningIds]);
-  const visibleEdges=useMemo(()=>edges.map(edge=>({...edge,animated:activeEdgeIds.has(edge.id)})),[edges,activeEdgeIds]);
+  const visibleNodes=useMemo(()=>nodes.map(node=>node.data.disabled?{...node,className:'canvas-node-disabled'}:node),[nodes]);
+  const visibleEdges=useMemo(()=>edges.map(edge=>({
+    ...edge,type:'canvas',animated:false,data:{...edge.data,running:activeEdgeIds.has(edge.id)}
+  })),[edges,activeEdgeIds]);
   const storageMode=getStorageMode();
   const flow=useReactFlow(),updateNodeInternals=useUpdateNodeInternals(),fileInput=useRef(null),pendingImage=useRef(null),saveTimer=useRef(null),viewportSaveTimer=useRef(null),saveQueue=useRef(Promise.resolve()),toastTimer=useRef(null),canvasWrap=useRef(null),loadFailed=useRef(false),skipInitialSave=useRef(true),lastCanvasContent=useRef(null),contentDirty=useRef(false),cancelRename=useRef(false),activeRuns=useRef(new Set()),serverRuns=useRef(new Set()),activeReversals=useRef(new Set()),activeOptimizations=useRef(new Set()),lastHandleZoom=useRef(null);
   const updateHandleSize=useCallback(zoom=>{if(Math.abs((lastHandleZoom.current??-1)-zoom)<0.001)return;lastHandleZoom.current=zoom;const size=13/Math.max(0.2,zoom);canvasWrap.current?.style.setProperty('--connection-handle-size',size+'px');canvasWrap.current?.style.setProperty('--connection-handle-border',2/Math.max(0.2,zoom)+'px');updateNodeInternals(flow.getNodes().map(node=>node.id))},[flow,updateNodeInternals]);
   useEffect(()=>{if(ready)updateHandleSize(flow.getZoom())},[ready,flow,updateHandleSize]);
-  const saveApiSettings=()=>{setSettings(draftSettings);saveSettings(draftSettings);setSettingsOpen(false);};
+  const saveApiSettings=next=>{saveSettings(next);setSettings(next);setSettingsOpen(false);showToast('API 设置已保存');};
   const openSettings=useCallback(()=>{setDraftSettings({imageProfiles:settings.imageProfiles.map(profile=>({...profile})),text:{...settings.text}});setSettingsOpen(true)},[settings]);
   const refreshRunState=useCallback(()=>setRunningIds(previous=>{const next=new Set([...activeRuns.current,...serverRuns.current]);return previous.size===next.size&&[...next].every(id=>previous.has(id))?previous:next}),[]);
   const beginRun=useCallback(nodeId=>{if(activeRuns.current.has(nodeId)||serverRuns.current.has(nodeId))return false;activeRuns.current.add(nodeId);refreshRunState();return true},[refreshRunState]);
@@ -282,6 +346,58 @@ function CanvasEditor({projectId,onBack,theme,setTheme}){
   const finishRename=()=>{if(!cancelRename.current){const next=draftTitle.trim();if(next)setCanvasTitle(next)}setRenaming(false)};
   const updateNode=useCallback((nodeId,patch)=>setNodes(ns=>ns.map(n=>n.id===nodeId?{...n,data:{...n.data,...patch}}:n)),[setNodes]);
   const resizeNode=useCallback((nodeId,width,height)=>setNodes(ns=>ns.map(n=>n.id===nodeId?{...n,style:{...n.style,width,height}}:n)),[setNodes]);
+  const copyDrag=useRef(null);
+  const onNodeDragStart=useCallback((event,node,dragged)=>{
+    copyDrag.current=null;
+    if(!event.altKey||!node||!dragged.some(item=>item.id===node.id))return;
+    const {error,taskId,lastSyncedTaskId,...data}=node.data;
+    copyDrag.current={
+      sourceId:node.id,
+      originalPosition:node.position,
+      draggedIds:new Set(dragged.map(item=>item.id)),
+      copy:{id:id(),type:node.type,position:node.position,data,style:{...node.style},selected:true}
+    };
+  },[]);
+  const handleNodesChange=useCallback(changes=>{
+    const drag=copyDrag.current;
+    if(!drag){onNodesChange(changes);return}
+    const move=changes.find(change=>change.type==='position'&&change.id===drag.sourceId);
+    if(!move){onNodesChange(changes);return}
+    const remaining=changes.filter(change=>change.type!=='position'||!drag.draggedIds.has(change.id));
+    const position=move.position||drag.copy.position;
+    const moved=position.x!==drag.originalPosition.x||position.y!==drag.originalPosition.y;
+    if(!drag.created&&!moved){onNodesChange(remaining);return}
+    const firstMove=!drag.created;
+    drag.created=true;
+    const copy={...drag.copy,position,dragging:move.dragging};
+    setNodes(current=>{
+      const next=applyNodeChanges(remaining,current);
+      if(firstMove)return [...next.map(node=>node.selected?{...node,selected:false}:node),copy];
+      return next.map(node=>node.id===copy.id?{...node,position,dragging:move.dragging}:node);
+    });
+  },[onNodesChange,setNodes]);
+  const onNodeDragStop=useCallback(()=>{copyDrag.current=null},[]);
+  useEffect(()=>{
+    const handleShortcut=event=>{
+      if(event.defaultPrevented||event.repeat||event.isComposing||event.altKey||event.metaKey)return;
+      if(event.target instanceof HTMLElement&&(event.target.isContentEditable||event.target.closest('input,textarea,select')))return;
+      if(settingsOpen||activeImageTool||connectionMenu||copyDrag.current)return;
+      const key=event.key.toLowerCase();
+      const selected=flow.getNodes().filter(node=>node.selected);
+      if(!event.ctrlKey&&!event.shiftKey&&key==='x'&&selected.length===1){
+        event.preventDefault();
+        void flow.deleteElements({nodes:[{id:selected[0].id}]});
+      }
+      if(event.ctrlKey&&!event.shiftKey&&key==='b'&&selected.length){
+        event.preventDefault();
+        const ids=new Set(selected.map(node=>node.id));
+        const disabled=selected.some(node=>!node.data.disabled);
+        setNodes(current=>current.map(node=>ids.has(node.id)?{...node,data:{...node.data,disabled}}:node));
+      }
+    };
+    window.addEventListener('keydown',handleShortcut);
+    return ()=>window.removeEventListener('keydown',handleShortcut);
+  },[flow,setNodes,settingsOpen,activeImageTool,connectionMenu]);
   const positionForNew=useCallback(()=>{const rect=canvasWrap.current?.getBoundingClientRect();if(!rect)return{x:0,y:0};const center=flow.screenToFlowPosition({x:rect.left+rect.width/2,y:rect.top+rect.height/2});return{x:center.x-155+Math.random()*55,y:center.y-110+Math.random()*55}},[flow]);
   const locateTask=useCallback(task=>{const node=nodes.find(item=>item.id===task.nodeId);if(!node){showToast('对应框已删除，结果仍可在任务列表中查看',true);return}flow.setCenter(node.position.x+(Number(node.style?.width)||310)/2,node.position.y+(Number(node.style?.height)||450)/2,{zoom:Math.max(flow.getZoom(),.75),duration:400})},[nodes,flow,showToast]);
   const addNode=useCallback((type,extra={},position)=>{const data=type==='text'?{title:'文字提示',text:'',...extra}:type==='image'?{title:'参考图片',...extra}:type==='lineart'?{title:'线稿',...extra}:type==='depth'?{title:'深度图',...extra}:{title:'生成图像',size:'2048x2048',prompt:'',imageProfileId:firstImageProfile(settings)?.id,...extra};const n={id:id(),type,position:snapPosition(position||positionForNew()),data,style:defaultNodeSize(type,data)};setNodes(ns=>[...ns,n]);return n.id},[setNodes,positionForNew,settings]);
@@ -302,20 +418,60 @@ function CanvasEditor({projectId,onBack,theme,setTheme}){
     });
   },[nodes,setEdges]);
   const onConnect=useCallback(connection=>{if(connection.source===connection.target)return;connectNodes(connection.source,connection.target)},[connectNodes]);
+  useEffect(()=>{
+    const canvas=canvasWrap.current;
+    if(!canvas)return;
+    const updateCursor=event=>canvas.classList.toggle('cutting-edges',event.altKey);
+    const resetCursor=()=>canvas.classList.remove('cutting-edges');
+    window.addEventListener('keydown',updateCursor,true);
+    window.addEventListener('keyup',updateCursor,true);
+    window.addEventListener('blur',resetCursor);
+    canvas.addEventListener('pointerenter',updateCursor);
+    return ()=>{
+      window.removeEventListener('keydown',updateCursor,true);
+      window.removeEventListener('keyup',updateCursor,true);
+      window.removeEventListener('blur',resetCursor);
+      canvas.removeEventListener('pointerenter',updateCursor);
+      resetCursor();
+    };
+  },[]);
   const onEdgeClick=useCallback((event,edge)=>{if(!event.altKey)return;event.preventDefault();event.stopPropagation();setEdges(current=>current.filter(item=>item.id!==edge.id))},[setEdges]);
   const onConnectEnd=useCallback((event,state)=>{if(state.isValid||state.toNode||!state.fromNode||state.fromHandle?.type!=='source')return;const rect=canvasWrap.current?.getBoundingClientRect();if(!rect)return;const point='changedTouches'in event?event.changedTouches[0]:event;if(!point||!Number.isFinite(point.clientX)||!Number.isFinite(point.clientY))return;const localX=point.clientX-rect.left,localY=point.clientY-rect.top;setConnectionMenu({sourceId:state.fromNode.id,position:flow.screenToFlowPosition({x:point.clientX,y:point.clientY}),x:Math.max(8,Math.min(localX,rect.width-208)),y:Math.max(8,Math.min(localY,rect.height-300))})},[flow]);
   const onPaneClick=useCallback(event=>{if(event.detail!==2)return;const rect=canvasWrap.current?.getBoundingClientRect();if(!rect)return;const localX=event.clientX-rect.left,localY=event.clientY-rect.top;setConnectionMenu({sourceId:null,position:flow.screenToFlowPosition({x:event.clientX,y:event.clientY}),x:Math.max(8,Math.min(localX,rect.width-208)),y:Math.max(8,Math.min(localY,rect.height-188))})},[flow]);
   const chooseNextNode=useCallback(type=>{if(!connectionMenu)return;const {sourceId,position}=connectionMenu;setConnectionMenu(null);if(type==='image'){if(sourceId)return;pendingImage.current={sourceId,position};fileInput.current?.click();return}const nextId=addNode(type,{},position);if(sourceId)connectNodes(sourceId,nextId,type)},[connectionMenu,nodes,addNode,connectNodes]);
   useEffect(()=>{const close=e=>{if(e.key==='Escape')setConnectionMenu(null)};window.addEventListener('keydown',close);return()=>window.removeEventListener('keydown',close)},[]);
   const runGeneration=useCallback(async nodeId=>{
-    const target=nodes.find(n=>n.id===nodeId);if(!target)return;
+    const target=nodes.find(n=>n.id===nodeId);if(!target||target.data.disabled)return;
     const found=new Set(),sources=[];
-    const collect=currentId=>{for(const edge of edges.filter(e=>e.target===currentId)){if(found.has(edge.source)||edge.source===nodeId)continue;found.add(edge.source);const node=nodes.find(n=>n.id===edge.source);if(!node)continue;sources.push(node);if(!['generate','lineart','depth'].includes(node.type))collect(node.id)}};
+    const collect=currentId=>{
+      for(const edge of edges.filter(edge=>edge.target===currentId)){
+        if(found.has(edge.source)||edge.source===nodeId)continue;
+        found.add(edge.source);
+        const node=nodes.find(node=>node.id===edge.source);
+        if(!node||node.data.disabled)continue;
+        sources.push(node);
+        if(!['generate','lineart','depth'].includes(node.type))collect(node.id);
+      }
+    };
     collect(nodeId);
-    const prompt=[...sources.filter(n=>n.type==='text').map(n=>n.data.text?.trim()),target.data.prompt?.trim()].filter(Boolean).join('\n\n');
-    const selectedControl=sources.filter(isControlSource).at(-1);
-    const images=sources.filter(n=>isImageSource(n)&&(!isControlSource(n)||n.id===selectedControl?.id)).map(n=>n.data.src);
-    if(!prompt){updateNode(nodeId,{error:'请在生图框填写画面描述，或连接一个写有内容的文字框'});return}
+    const description=[...sources.filter(n=>n.type==='text').map(n=>n.data.text?.trim()),target.data.prompt?.trim()].filter(Boolean).join('\n\n');
+    const directInputs=edges.filter(edge=>edge.target===nodeId).map(edge=>nodes.find(node=>node.id===edge.source)).filter(node=>node&&!node.data.disabled);
+    const selectedControl=directInputs.filter(isControlSource).at(-1)??sources.filter(isControlSource).at(-1);
+    if(selectedControl&&!isImageSource(selectedControl)){
+      const label=selectedControl.type==='depth'?'深度图':'线稿';
+      updateNode(nodeId,{error:'请先生成已连接的'+label+'，再开始生图'});
+      return;
+    }
+    if(!description){updateNode(nodeId,{error:'请在生图框填写画面描述，或连接一个写有内容的文字框'});return}
+    const images=sources.filter(node=>isImageSource(node)&&!isControlSource(node)).map(node=>node.data.src);
+    let prompt=description;
+    if(selectedControl){
+      images.unshift(selectedControl.data.src);
+      const guide=selectedControl.type==='depth'
+        ? '参考图 1 是深度图。以它为构图依据，尽量保持主体的位置、姿态、大小、镜头角度和前后景关系。用下面的描述决定外观、色彩、材质和风格，最终图像应自然呈现，不要复现深度图的灰度。'
+        : '参考图 1 是线稿。以它为构图依据，尽量保持主体的轮廓、姿态、位置和主要场景布局。用下面的描述决定外观、色彩、材质和风格。';
+      prompt=guide+'\n\n'+description;
+    }
     const imageApi=selectedImageProfile(settings,target.data.imageProfileId)||firstImageProfile(settings);const size=target.data.size==='custom'?`${target.data.customWidth||2880}x${target.data.customHeight||2880}`:target.data.size||'2048x2048';
     if(!validSize(size)){updateNode(nodeId,{error:'尺寸无效：请选择预设尺寸，或输入符合比例与像素限制的自定义尺寸'});return}
     if(!imageApi?.baseUrl||!(imageApi?.key||LOCAL_MODE&&imageApi?.keyEnv)||!imageApi?.model){const missing=[!imageApi?.baseUrl&&'地址',!(imageApi?.key||LOCAL_MODE&&imageApi?.keyEnv)&&'密钥',!imageApi?.model&&'模型'].filter(Boolean).join('、');openSettings();updateNode(nodeId,{error:`所选图像 API 缺少${missing}，请在 API 设置补全并保存`});return}
@@ -332,11 +488,14 @@ function CanvasEditor({projectId,onBack,theme,setTheme}){
       showToast('任务已提交，结果会显示在右侧列表');
     }catch(e){updateNode(nodeId,{error:e.message||'生成失败'})}finally{endRun(nodeId)}
   },[nodes,edges,settings,canvasTitle,projectId,updateNode,showToast,beginRun,endRun,refreshRunState,openSettings]);
-  const openImageTool=useCallback((nodeId,tool)=>setActiveImageTool({nodeId,tool}),[]);
+  const openImageTool=useCallback((nodeId,tool)=>{
+    if(nodes.some(node=>node.id===nodeId&&!node.data.disabled))setActiveImageTool({nodeId,tool});
+  },[nodes]);
   const undoImage=useCallback(nodeId=>setNodes(current=>current.map(node=>node.id===nodeId&&node.data.previousSrc?{...node,data:{...node.data,src:node.data.previousSrc,previousSrc:node.data.src,error:null}}:node)),[setNodes]);
   const saveImageEdit=useCallback((nodeId,src)=>{setNodes(current=>current.map(node=>node.id===nodeId?{...node,data:{...node.data,previousSrc:node.data.src,src,error:null}}:node));setActiveImageTool(null);showToast('图片已保存到当前框')},[setNodes,showToast]);
   const submitImageEdit=useCallback(async(nodeId,request)=>{
     const node=nodes.find(item=>item.id===nodeId);if(!node)throw new Error('图片框不存在');
+    if(node.data.disabled)throw new Error('请先启用当前图片框');
     const api=selectedImageProfile(settings,request.profileId);if(!api?.baseUrl||!(api?.key||LOCAL_MODE&&api?.keyEnv)||!api?.model)throw new Error('所选图像 API 缺少地址、密钥或模型');
     if(!beginRun(nodeId))throw new Error('此框已有任务正在运行');
     try{
@@ -350,7 +509,7 @@ function CanvasEditor({projectId,onBack,theme,setTheme}){
   },[nodes,settings,projectId,canvasTitle,beginRun,endRun,refreshRunState,updateNode,showToast,syncTasks]);
   const runProcess=useCallback(async nodeId=>{
     const target=nodes.find(n=>n.id===nodeId);
-    if(!target||!['lineart','depth'].includes(target.type))return;
+    if(!target||target.data.disabled||!['lineart','depth'].includes(target.type))return;
     const source=edges.filter(e=>e.target===nodeId).map(e=>nodes.find(n=>n.id===e.source)).filter(isImageSource).at(-1);
     if(!source){updateNode(nodeId,{error:'请先从有图片的框连线到这里'});return}
     updateNode(nodeId,{error:null});
@@ -363,6 +522,7 @@ function CanvasEditor({projectId,onBack,theme,setTheme}){
     finally{endRun(nodeId)}
   },[nodes,edges,updateNode,showToast,beginRun,endRun]);
   const reversePrompt=useCallback(async nodeId=>{
+    if(nodes.find(node=>node.id===nodeId)?.data.disabled)return;
     const imageSources=edges.filter(e=>e.target===nodeId).map(e=>nodes.find(n=>n.id===e.source)).filter(isImageSource).map(n=>n.data.src);
     if(!imageSources.length){updateNode(nodeId,{error:'请先从有图片的框连线到文字框'});return}
     const textApi=settings.text||{};
@@ -383,6 +543,7 @@ function CanvasEditor({projectId,onBack,theme,setTheme}){
   },[nodes,edges,settings,updateNode,showToast,openSettings]);
   const optimizePrompt=useCallback(async nodeId=>{
     const target=nodes.find(node=>node.id===nodeId);
+    if(!target||target.data.disabled)return;
     const field=target?.type==='generate'?'prompt':'text';
     const prompt=target?.data?.[field];
     if(!prompt?.trim()){updateNode(nodeId,{error:field==='prompt'?'请先在画面描述中写下想法':'请先在文字框写下想要的画面'});return}
@@ -403,7 +564,13 @@ function CanvasEditor({projectId,onBack,theme,setTheme}){
     finally{activeOptimizations.current.delete(nodeId);setOptimizingIds(new Set(activeOptimizations.current))}
   },[nodes,settings,updateNode,showToast,openSettings,setNodes]);
   const context=useMemo(()=>({updateNode,resizeNode,runGeneration,runProcess,reversePrompt,optimizePrompt,runningIds,reversingIds,optimizingIds,edges,nodes,settings,openImageTool,undoImage}),[updateNode,resizeNode,runGeneration,runProcess,reversePrompt,optimizePrompt,runningIds,reversingIds,optimizingIds,edges,nodes,settings,openImageTool,undoImage]);
-  return <CanvasContext.Provider value={context}><div className="app" data-theme={theme}><header className="topbar"><div className="editor-brand"><button className="back-to-projects" type="button" onClick={exitToProjects} title="返回我的项目"><ArrowLeft size={17}/><span>项目</span></button><div className="brand"><div className="brand-mark"><Sparkles size={19}/></div><div><b>Canvas Studio</b><span>你的创意空间</span></div></div></div><div className="top-center"><span className="document-dot"/>{renaming?<input className="canvas-name-input" aria-label="画布名称" autoFocus maxLength={60} value={draftTitle} onFocus={e=>e.target.select()} onChange={e=>setDraftTitle(e.target.value)} onBlur={finishRename} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();e.currentTarget.blur()}else if(e.key==='Escape'){cancelRename.current=true;setRenaming(false)}}}/>:<><span className="canvas-name" title={canvasTitle}>{canvasTitle}</span><button className="rename-button" aria-label="重命名画布" title="修改画布名" onClick={startRename}><Pencil size={13}/></button></>}<span className="top-separator">/</span><span className={`save-status ${saveState}`}>{saveState==='saved'?<><Check size={12}/> 已保存</>:saveState==='saving'?<><LoaderCircle size={12} className="spin"/> 保存中</>:saveState==='error'?<><AlertCircle size={12}/> 保存失败</>:'加载中'}</span></div><div className="top-actions"><ThemePicker theme={theme} onSelect={setTheme}/></div></header><main className="main"><div className="canvas-wrap" ref={canvasWrap} onDragOver={e=>{if(e.dataTransfer.types.includes('Files'))e.preventDefault()}} onDrop={e=>{if(e.dataTransfer.files.length){e.preventDefault();addImages(e.dataTransfer.files,flow.screenToFlowPosition({x:e.clientX,y:e.clientY}))}}}><ReactFlow nodes={nodes} edges={visibleEdges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onEdgeClick={onEdgeClick} connectionLineType={ConnectionLineType.Bezier} onConnectEnd={onConnectEnd} onPaneClick={onPaneClick} snapToGrid snapGrid={SNAP_GRID} zoomOnDoubleClick={false} onMove={(_,viewport)=>updateHandleSize(viewport.zoom)} onMoveEnd={saveViewport} minZoom={0.2} maxZoom={2} fitView fitViewOptions={{padding:0.28}} deleteKeyCode={['Backspace','Delete']} proOptions={{hideAttribution:true}}><Background color={THEME_BY_ID[theme].grid} gap={GRID_SIZE} size={1.2}/><Controls showInteractive={false}/><MiniMap pannable zoomable nodeColor={n=>n.type==='generate'?THEME_BY_ID[theme].accent:n.type==='image'?'#56b49a':'#e0ae6b'} maskColor={THEME_BY_ID[theme].mask}/></ReactFlow>{connectionMenu&&<><div className="connection-menu-dismiss" onClick={()=>setConnectionMenu(null)}/><div className="connection-menu" style={{left:connectionMenu.x,top:connectionMenu.y}}><div className="connection-menu-title">{connectionMenu.sourceId?'下一步添加':'添加节点'}</div><button onClick={()=>chooseNextNode('text')}><span className="connection-menu-icon text"><Type size={16}/></span><span>文字框<small>继续编写提示词</small></span></button>{!connectionMenu.sourceId&&<button onClick={()=>chooseNextNode('image')}><span className="connection-menu-icon image"><ImageIcon size={16}/></span><span>图片框<small>从本地导入图片</small></span></button>}<button onClick={()=>chooseNextNode('generate')}><span className="connection-menu-icon generate"><Sparkles size={16}/></span><span>生图框<small>汇总输入并生成</small></span></button>{connectionMenu.sourceId&&isImageSource(nodes.find(n=>n.id===connectionMenu.sourceId))&&<><button onClick={()=>chooseNextNode('lineart')}><span className="connection-menu-icon lineart"><PenLine size={16}/></span><span>线稿框<small>本地提取黑白线稿</small></span></button><button onClick={()=>chooseNextNode('depth')}><span className="connection-menu-icon depth"><Layers3 size={16}/></span><span>深度框<small>本地估计灰度深度图</small></span></button></>}</div></>}<div className="floating-toolbar"><button onClick={()=>addNode('text')} title="添加文字"><Type size={19}/><span>文字</span></button><div className="toolbar-rule"/><button onClick={()=>{pendingImage.current=null;fileInput.current?.click()}} title="导入图片"><ImageIcon size={19}/><span>图片</span></button><div className="toolbar-rule"/><button onClick={()=>addNode('generate')} title="添加生成节点"><Sparkles size={19}/><span>生图</span></button></div><div className="canvas-hint"><MousePointer2 size={14}/> 双击空白处添加节点 · 拖动边角缩放节点 · 滚轮缩放画布 · Alt+点击连线断开</div><input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={async e=>{const pending=pendingImage.current;pendingImage.current=null;const images=await addImages(e.target.files,pending?.position);if(pending?.sourceId)images.forEach(image=>connectNodes(pending.sourceId,image.id));e.target.value=''}}/></div><TaskSidebar tasks={tasks} onLocate={locateTask} serviceError={taskServiceError} storageMode={storageMode}/></main>{toast&&<div className={`toast ${toast.error?'error':''}`}>{toast.error?<AlertCircle size={17}/>:<Check size={17}/>}<span>{toast.message}</span><button onClick={()=>setToast(null)}><X size={15}/></button></div>}{activeImageTool&&nodes.some(node=>node.id===activeImageTool.nodeId&&node.data.src)&&<ImageToolDialog key={activeImageTool.nodeId+activeImageTool.tool} tool={activeImageTool.tool} node={nodes.find(node=>node.id===activeImageTool.nodeId)} profiles={settings.imageProfiles} onClose={()=>setActiveImageTool(null)} onLocalSave={src=>saveImageEdit(activeImageTool.nodeId,src)} onAiSubmit={request=>submitImageEdit(activeImageTool.nodeId,request)}/>} {settingsOpen&&draftSettings&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettingsOpen(false)}}><div className="settings-modal"><div className="modal-head"><div className="modal-icon"><Settings size={20}/></div><div><h2>API 设置</h2><p>图像生成与提示词处理分别连接服务</p></div><button className="icon-button" onClick={()=>setSettingsOpen(false)}><X size={20}/></button></div><div className="modal-body"><ImageProfileEditor settings={draftSettings} onChange={setDraftSettings}/><ApiConfigTransfer settings={draftSettings} localMode={LOCAL_MODE} onImport={setDraftSettings}/><div className="settings-note">文本服务需支持 OpenAI 兼容的 /chat/completions；图像反推还需支持图片输入。API Key 保存在当前浏览器，可通过配置文件迁移。</div></div><div className="modal-footer"><button className="secondary-button" onClick={()=>setSettingsOpen(false)}>取消</button><button className="primary-button" onClick={()=>{setSettings(draftSettings);saveSettings(draftSettings);setSettingsOpen(false);showToast('API 设置已保存')}}>保存设置</button></div></div></div>}</div></CanvasContext.Provider>
+  const flushBeforeStorageChange=async()=>{
+    if(!ready||loadFailed.current)throw new Error('当前画布尚未加载完成，请从项目列表导入存储配置');
+    clearTimeout(saveTimer.current);
+    clearTimeout(viewportSaveTimer.current);
+    await queueSave(snapshot(),contentDirty.current);
+  };
+  return <CanvasContext.Provider value={context}><div className="app" data-theme={theme}><header className="topbar"><div className="editor-brand"><button className="back-to-projects" type="button" onClick={exitToProjects} title="返回我的项目"><ArrowLeft size={17}/><span>项目</span></button><div className="brand"><div className="brand-mark"><Sparkles size={19}/></div><div><b>Canvas Studio</b><span>你的创意空间</span></div></div></div><div className="top-center"><span className="document-dot"/>{renaming?<input className="canvas-name-input" aria-label="画布名称" autoFocus maxLength={60} value={draftTitle} onFocus={e=>e.target.select()} onChange={e=>setDraftTitle(e.target.value)} onBlur={finishRename} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();e.currentTarget.blur()}else if(e.key==='Escape'){cancelRename.current=true;setRenaming(false)}}}/>:<><span className="canvas-name" title={canvasTitle}>{canvasTitle}</span><button className="rename-button" aria-label="重命名画布" title="修改画布名" onClick={startRename}><Pencil size={13}/></button></>}<span className="top-separator">/</span><span className={`save-status ${saveState}`}>{saveState==='saved'?<><Check size={12}/> 已保存</>:saveState==='saving'?<><LoaderCircle size={12} className="spin"/> 保存中</>:saveState==='error'?<><AlertCircle size={12}/> 保存失败</>:'加载中'}</span></div><div className="top-actions">{!tasksOpen&&<button type="button" className="top-button" aria-label="显示任务列表" title="显示任务列表" onClick={()=>setTasksOpen(true)}>生成任务</button>}<ThemePicker theme={theme} onSelect={setTheme}/></div></header><main className="main"><div className="canvas-wrap" ref={canvasWrap} onDragOver={e=>{if(e.dataTransfer.types.includes('Files'))e.preventDefault()}} onDrop={e=>{if(e.dataTransfer.files.length){e.preventDefault();addImages(e.dataTransfer.files,flow.screenToFlowPosition({x:e.clientX,y:e.clientY}))}}}><ReactFlow nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={handleNodesChange} onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop} selectionOnDrag selectionMode="partial" panOnDrag={[1]} panActivationKeyCode={null} onEdgesChange={onEdgesChange} onConnect={onConnect} onEdgeClick={onEdgeClick} connectionLineType={ConnectionLineType.Bezier} onConnectEnd={onConnectEnd} onPaneClick={onPaneClick} snapToGrid snapGrid={SNAP_GRID} zoomOnDoubleClick={false} onMove={(_,viewport)=>updateHandleSize(viewport.zoom)} onMoveEnd={saveViewport} minZoom={0.2} maxZoom={2} fitView fitViewOptions={{padding:0.28}} deleteKeyCode={['Backspace','Delete']} proOptions={{hideAttribution:true}}><Background color={THEME_BY_ID[theme].grid} gap={GRID_SIZE} size={1.2}/><Controls showInteractive={false}/><MiniMap pannable zoomable nodeColor={n=>n.type==='generate'?THEME_BY_ID[theme].accent:n.type==='image'?'#56b49a':'#e0ae6b'} maskColor={THEME_BY_ID[theme].mask}/></ReactFlow>{connectionMenu&&<><div className="connection-menu-dismiss" onClick={()=>setConnectionMenu(null)}/><div className="connection-menu" style={{left:connectionMenu.x,top:connectionMenu.y}}><div className="connection-menu-title">{connectionMenu.sourceId?'下一步添加':'添加节点'}</div><button onClick={()=>chooseNextNode('text')}><span className="connection-menu-icon text"><Type size={16}/></span><span>文字框<small>继续编写提示词</small></span></button>{!connectionMenu.sourceId&&<button onClick={()=>chooseNextNode('image')}><span className="connection-menu-icon image"><ImageIcon size={16}/></span><span>图片框<small>从本地导入图片</small></span></button>}<button onClick={()=>chooseNextNode('generate')}><span className="connection-menu-icon generate"><Sparkles size={16}/></span><span>生图框<small>汇总输入并生成</small></span></button>{connectionMenu.sourceId&&isImageSource(nodes.find(n=>n.id===connectionMenu.sourceId))&&<><button onClick={()=>chooseNextNode('lineart')}><span className="connection-menu-icon lineart"><PenLine size={16}/></span><span>线稿框<small>本地提取黑白线稿</small></span></button><button onClick={()=>chooseNextNode('depth')}><span className="connection-menu-icon depth"><Layers3 size={16}/></span><span>深度框<small>本地估计灰度深度图</small></span></button></>}</div></>}<div className="floating-toolbar"><button onClick={()=>addNode('text')} title="添加文字"><Type size={19}/><span>文字</span></button><div className="toolbar-rule"/><button onClick={()=>{pendingImage.current=null;fileInput.current?.click()}} title="导入图片"><ImageIcon size={19}/><span>图片</span></button><div className="toolbar-rule"/><button onClick={()=>addNode('generate')} title="添加生成节点"><Sparkles size={19}/><span>生图</span></button></div><div className="canvas-hint"><MousePointer2 size={14}/> 双击空白处添加节点 · 拖动边角缩放节点 · 滚轮缩放画布 · Alt+点击连线断开</div><input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={async e=>{const pending=pendingImage.current;pendingImage.current=null;const images=await addImages(e.target.files,pending?.position);if(pending?.sourceId)images.forEach(image=>connectNodes(pending.sourceId,image.id));e.target.value=''}}/></div>{tasksOpen&&<TaskSidebar tasks={tasks} onLocate={locateTask} serviceError={taskServiceError} storageMode={storageMode} onClose={()=>setTasksOpen(false)}/> }</main>{toast&&<div className={`toast ${toast.error?'error':''}`}>{toast.error?<AlertCircle size={17}/>:<Check size={17}/>}<span>{toast.message}</span><button onClick={()=>setToast(null)}><X size={15}/></button></div>}{activeImageTool&&nodes.some(node=>node.id===activeImageTool.nodeId&&node.data.src)&&<ImageToolDialog key={activeImageTool.nodeId+activeImageTool.tool} tool={activeImageTool.tool} node={nodes.find(node=>node.id===activeImageTool.nodeId)} profiles={settings.imageProfiles} onClose={()=>setActiveImageTool(null)} onLocalSave={src=>saveImageEdit(activeImageTool.nodeId,src)} onAiSubmit={request=>submitImageEdit(activeImageTool.nodeId,request)}/>}{settingsOpen&&draftSettings&&<ApiSettingsModal draftSettings={draftSettings} setDraftSettings={setDraftSettings} onClose={()=>setSettingsOpen(false)} onSave={saveApiSettings} beforeStorageChange={flushBeforeStorageChange}/>}</div></CanvasContext.Provider>
 }
 function ProjectApp(){
   const [projectId,setProjectId]=useState(()=>new URLSearchParams(location.search).get('project'));

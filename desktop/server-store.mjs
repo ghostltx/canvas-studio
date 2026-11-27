@@ -1,12 +1,40 @@
 import {DatabaseSync} from 'node:sqlite';
-import {mkdir,readFile,writeFile} from 'node:fs/promises';
-import {join} from 'node:path';
+import {mkdir,readFile,rename,rm,writeFile} from 'node:fs/promises';
+import {dirname,isAbsolute,join} from 'node:path';
+import {randomUUID} from 'node:crypto';
 import {homedir} from 'node:os';
 
 const configPath=join(homedir(),'.canvas-studio','config.json');
 
 export async function localConfig(){
   try{return JSON.parse(await readFile(configPath,'utf8'))}catch(error){if(error.code==='ENOENT')return {};throw error}
+}
+
+export async function saveStorageConfig(input){
+  if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('存储配置格式无效');
+  const changes={};
+  if(input.dataDir!==undefined){
+    if(typeof input.dataDir!=='string'||input.dataDir.length>4096||input.dataDir.includes('\0')||!isAbsolute(input.dataDir))throw new Error('NAS 路径必须是绝对路径');
+    changes.dataDir=input.dataDir;
+  }
+  if(input.cloud!==undefined){
+    const {baseUrl,bypassToken,syncToken}=input.cloud||{};
+    let url;
+    try{url=new URL(baseUrl)}catch{throw new Error('Cloudflare 地址无效')}
+    if(url.protocol!=='https:'||url.username||url.password)throw new Error('Cloudflare 地址必须使用 HTTPS');
+    if(![bypassToken,syncToken].every(value=>typeof value==='string'&&/^[!-~]{1,4096}$/.test(value)))throw new Error('Cloudflare 连接令牌无效');
+    changes.cloud={baseUrl:url.origin,bypassToken,syncToken};
+  }
+  if(!Object.keys(changes).length)return;
+  const config=await localConfig();
+  const next={...config,...changes};
+  if(changes.cloud)next.cloud={...config.cloud,...changes.cloud};
+  const temporary=configPath+'.'+randomUUID()+'.tmp';
+  await mkdir(dirname(configPath),{recursive:true});
+  try{
+    await writeFile(temporary,JSON.stringify(next,null,2)+'\n',{encoding:'utf8',flag:'wx',mode:0o600});
+    await rename(temporary,configPath);
+  }finally{await rm(temporary,{force:true})}
 }
 
 export async function dataDirectory(config){

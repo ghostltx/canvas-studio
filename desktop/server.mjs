@@ -5,13 +5,24 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {homedir} from 'node:os';
 import {constants as fsConstants} from 'node:fs';
-import {dataDirectory,localConfig,openProjectStore} from './server-store.mjs';
+import {AsyncLocalStorage} from 'node:async_hooks';
+import {dataDirectory,localConfig,openProjectStore,saveStorageConfig} from './server-store.mjs';
 
 const legacyTaskDir=join(fileURLToPath(new URL('.', import.meta.url)), 'data', 'tasks');
-const config=await localConfig();
-const dataRoot=await dataDirectory(config);
-let projectStore=null;
-const getProjectStore=async()=>projectStore||(projectStore=await openProjectStore(dataRoot));
+const storageContext=new AsyncLocalStorage();
+const projectStores=new Map();
+let config=await localConfig();
+let storageWrites=Promise.resolve();
+function getProjectStore(){
+  const {dataRoot}=storageContext.getStore();
+  if(!projectStores.has(dataRoot)){
+    projectStores.set(dataRoot,openProjectStore(dataRoot).catch(error=>{
+      projectStores.delete(dataRoot);
+      throw error;
+    }));
+  }
+  return projectStores.get(dataRoot);
+}
 const taskDir = process.env.CANVAS_TASK_DIR || join(homedir(),'.canvas-studio','data','tasks');
 const taskIndex = join(taskDir, 'index.json');
 await mkdir(taskDir,{recursive:true});
@@ -41,7 +52,6 @@ await persistTasks();
 const publicTask = task => ({...task,imageUrl:task.status==='completed'?'/api/tasks/'+task.id+'/image':null});
 
 const MAX_BODY = 45 * 1024 * 1024;
-const assetDir=join(dataRoot,'assets');
 const availableEnvNames=()=>Object.keys(process.env).filter(name=>/(?:KEY|TOKEN|SECRET|API|OPENAI|GROK|LUX)/i.test(name)&&typeof process.env[name]==='string'&&process.env[name].length>0).sort();
 const localOrigin=req=>(!req.headers.origin||/^http:\/\/(?:127\.0\.0\.1|localhost):(?:5173|4174)$/.test(req.headers.origin))&&(!req.headers['sec-fetch-site']||['same-origin','none'].includes(req.headers['sec-fetch-site']));
 function resolveRequestKey(request){
@@ -62,7 +72,7 @@ const readBody = async req => {
 };
 const readBinary=async req=>{const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>MAX_BODY)throw new Error('图片过大，请使用小于 45 MB 的输入');chunks.push(chunk)}return Buffer.concat(chunks)};
 async function cloudProxy(req,res){
-  const cloud=config.cloud;
+  const cloud=storageContext.getStore().config.cloud;
   if(!cloud?.baseUrl||!cloud?.bypassToken||!cloud?.syncToken)return send(res,503,{error:'Cloudflare 同步尚未在本机配置'});
   const path=req.url.slice('/api/cloud'.length);
   if(!/^\/(?:status|projects(?:\/(?:[0-9a-f-]{36}|main))?|assets(?:\/[0-9a-f-]{36})?|tasks(?:\/[0-9a-f-]{36}\/image)?)$/i.test(path))return send(res,404,{error:'云端接口不存在'});
@@ -78,7 +88,7 @@ async function cloudProxy(req,res){
   }catch(error){return send(res,502,{error:error.message||'无法连接 Cloudflare 画布'})}
 }
 async function cloudApi(path,{method='GET',body,type='application/json'}={}){
-  const cloud=config.cloud;
+  const cloud=storageContext.getStore().config.cloud;
   if(!cloud?.baseUrl||!cloud?.bypassToken||!cloud?.syncToken)throw new Error('Cloudflare 同步尚未在本机配置');
   const response=await fetch(new URL(`/api/desktop-sync${path}`,cloud.baseUrl),{method,headers:{'OAI-Sites-Authorization':`Bearer ${cloud.bypassToken}`,'X-Canvas-Sync-Token':cloud.syncToken,...(body?{'Content-Type':type}:{})},body,signal:AbortSignal.timeout(120000)});
   if(!response.ok){let error;try{error=(await response.json()).error}catch{}throw new Error(error||`Cloudflare 同步失败（HTTP ${response.status}）`)}
@@ -209,7 +219,42 @@ async function syncTaskHistory(mode){
   if(localChanged)await persistTasks();
 }
 http.createServer(async (req,res) => {
+  const currentConfig=config;
+  const dataRoot=await dataDirectory(currentConfig);
+  return storageContext.run({config:currentConfig,dataRoot},()=>handleRequest(req,res,dataRoot));
+}).listen(Number(process.env.CANVAS_API_PORT || 4174),'127.0.0.1',()=>console.log('API proxy ready'));
+
+async function handleRequest(req,res,dataRoot){
+  const assetDir=join(dataRoot,'assets');
   if (req.url === '/api/health') return send(res,200,{ok:true});
+  if(req.url==='/api/storage-config'){
+    if(!localOrigin(req)||req.headers['x-canvas-settings']!=='1')return send(res,403,{error:'只允许本地 API 设置访问存储配置'});
+    if(req.method==='GET'){
+      const {dataDir,cloud}=storageContext.getStore().config;
+      const output={dataDir:process.env.CANVAS_DATA_DIR||dataDir};
+      if(cloud?.baseUrl&&cloud.bypassToken&&cloud.syncToken){
+        output.cloud={baseUrl:cloud.baseUrl,bypassToken:cloud.bypassToken,syncToken:cloud.syncToken};
+      }
+      return send(res,200,output);
+    }
+    if(req.method==='PUT'){
+      try{
+        if(req.headers['content-type']?.split(';')[0]!=='application/json')return send(res,415,{error:'存储配置必须是 JSON'});
+        const input=await readBody(req);
+        if(input?.dataDir&&process.env.CANVAS_DATA_DIR&&input.dataDir!==process.env.CANVAS_DATA_DIR){
+          return send(res,409,{error:'当前 NAS 路径由 CANVAS_DATA_DIR 环境变量指定，请先调整该变量'});
+        }
+        const update=storageWrites.catch(()=>{}).then(async()=>{
+          await saveStorageConfig(input);
+          config=await localConfig();
+        });
+        storageWrites=update;
+        await update;
+        return send(res,200,{ok:true});
+      }catch(error){return send(res,400,{error:error.message||'保存存储配置失败'})}
+    }
+    return send(res,405,{error:'不支持该请求方式'});
+  }
   if(['POST','PUT','PATCH','DELETE'].includes(req.method)&&!localOrigin(req))return send(res,403,{error:'只允许从本地画布提交 API 请求'});
   if(req.url?.startsWith('/api/cloud/'))return cloudProxy(req,res);
   if(req.method==='GET'&&req.url==='/api/storage'){try{const projects=await getProjectStore();return send(res,200,{kind:'sqlite',location:dataRoot,integrity:projects.integrity()?'ok':'error'})}catch(error){return send(res,503,{error:error.message||'NAS 不可用'})}}
@@ -325,4 +370,4 @@ http.createServer(async (req,res) => {
     const image = await generateImage(resolveRequestKey(await readBody(req)));
     return send(res,200,{image});
   } catch (error) { return send(res,500,{error:error.message || '生成失败'}); }
-}).listen(Number(process.env.CANVAS_API_PORT || 4174),'127.0.0.1',()=>console.log('API proxy ready'));
+}

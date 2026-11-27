@@ -9,7 +9,7 @@ const readConfigText=raw=>{
   return match[1];
 };
 
-export function parseApiConfig(raw,current){
+export function parseApiConfig(raw,current,localMode=false){
   const input=JSON.parse(readConfigText(raw));
   if(input?.format!==CONFIG_FORMAT||input.version!==1||!Array.isArray(input.imageProfiles)||input.imageProfiles.length<1)throw new Error('请选择 Canvas Studio 导出的 API 配置文件');
   if(input.imageProfiles.length>2)throw new Error('当前界面固定两个生图 API；请先在原设备导出或整理多余配置');
@@ -24,12 +24,35 @@ export function parseApiConfig(raw,current){
   });
   if(imageProfiles.length<2){const spare=current.imageProfiles.find(item=>!used.has(item.id));if(spare)imageProfiles.push(spare)}
   const text=input.text||{};
-  return {imageProfiles:fixedImageProfiles(imageProfiles),text:{name:string(text.name,80)||DEFAULT_TEXT_NAME,baseUrl:string(text.baseUrl,500),model:string(text.model,120),key:string(text.key),keyEnv:''}};
+  const storage=localMode?input.storage:undefined;
+  if(storage!==undefined&&(!storage||typeof storage!=='object'||Array.isArray(storage)))throw new Error('存储配置格式错误');
+  return {imageProfiles:fixedImageProfiles(imageProfiles),text:{name:string(text.name,80)||DEFAULT_TEXT_NAME,baseUrl:string(text.baseUrl,500),model:string(text.model,120),key:string(text.key),keyEnv:''},...(storage===undefined?{}:{storage})};
 }
 
-export async function exportApiConfig(settings,localMode){
+async function requestStorageConfig(method,config){
+  const response=await fetch('/api/storage-config',{
+    method,
+    headers:{'X-Canvas-Settings':'1',...(config?{'Content-Type':'application/json'}:{})},
+    body:config?JSON.stringify(config):undefined,
+    cache:'no-store'
+  });
+  const result=await response.json().catch(()=>null);
+  if(!response.ok||!result)throw new Error(result?.error||'无法读取或保存本机存储配置，请检查 Canvas Studio 本地服务');
+  return result;
+}
+
+export async function applyImportedStorage(storage,setMode){
+  if(!storage)return false;
+  const {dataDir,cloud,mode}=storage;
+  await requestStorageConfig('PUT',{dataDir,cloud});
+  if(mode&&typeof mode.nas==='boolean'&&typeof mode.cloud==='boolean')setMode(mode);
+  return true;
+}
+
+export async function exportApiConfig(settings,localMode,mode){
+  const storage=localMode?(settings.storage??{...await requestStorageConfig('GET'),mode}):undefined;
   const configured=(entry)=>Boolean(entry?.baseUrl?.trim()||entry?.model?.trim()||entry?.key?.trim()||entry?.keyEnv?.trim());
-  if(!settings?.imageProfiles?.some(configured)&&!configured(settings?.text))throw new Error('当前浏览器没有已填写的 API 配置。请到已配置的浏览器导出，或先在这里填写并保存设置。');
+  if(!settings?.imageProfiles?.some(configured)&&!configured(settings?.text)&&!storage?.dataDir&&!storage?.cloud)throw new Error('当前没有可导出的 API 或存储配置');
   const imageProfiles=fixedImageProfiles(settings.imageProfiles).map(({id,name,baseUrl,model,key,keyEnv})=>({id,name,baseUrl,model,key:key||'',keyEnv:keyEnv||''}));
   const text={...settings.text,name:settings.text?.name||DEFAULT_TEXT_NAME};
   if(localMode){
@@ -43,7 +66,7 @@ export async function exportApiConfig(settings,localMode){
   }
   for(const item of imageProfiles)delete item.keyEnv;
   delete text.keyEnv;
-  const data={format:CONFIG_FORMAT,version:1,exportedAt:new Date().toISOString(),imageProfiles,text};
+  const data={format:CONFIG_FORMAT,version:1,exportedAt:new Date().toISOString(),imageProfiles,text,...(storage?{storage}:{})};
   const markdown=['# Canvas Studio API 配置','','图像 API 按下方顺序排列，第一项是新建生图框的默认模型。文本 API 用于提示词优化和图像反推。','','```json',JSON.stringify(data,null,2),'```',''].join('\n');
   const url=URL.createObjectURL(new Blob([markdown],{type:'text/markdown;charset=utf-8'}));
   try{const anchor=document.createElement('a');anchor.href=url;anchor.download=`canvas-studio-api-${new Date().toISOString().slice(0,10)}.md`;anchor.click()}finally{setTimeout(()=>URL.revokeObjectURL(url),30000)}

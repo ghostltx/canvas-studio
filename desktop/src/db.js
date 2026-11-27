@@ -9,6 +9,9 @@ let lastSaveTime=0;
 export function getStorageMode(){
   try{const value=JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}');return {nas:value.nas===true,cloud:value.cloud===true}}catch{return {nas:false,cloud:false}}
 }
+export function restoreStorageMode(mode){
+  localStorage.setItem(STORAGE_KEY,JSON.stringify({nas:mode.nas,cloud:mode.cloud}));
+}
 const stores=mode=>mode.nas||mode.cloud?[...(mode.nas?[nas]:[]),...(mode.cloud?[cloud]:[])]:[browser];
 const storeName=store=>store===browser?'browser':store.kind;
 
